@@ -30,7 +30,7 @@ class SidebarDrawer(QtWidgets.QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("SidebarDrawer")
-        self.setFixedWidth(340)
+        self.setFixedWidth(350)
         self.setStyleSheet("""
             #SidebarDrawer {
                 background-color: #161820;
@@ -96,7 +96,16 @@ class SidebarDrawer(QtWidgets.QFrame):
         layout.addLayout(batch_row)
 
         action_row = QtWidgets.QHBoxLayout()
-        action_row.setSpacing(6)
+        action_row.setSpacing(4)
+
+        # 批量操作范围选择（双侧全部 / 仅左(上)侧 / 仅右(下)侧）
+        self.cmb_scope = QtWidgets.QComboBox()
+        self.cmb_scope.setProperty("small", "true")
+        self.cmb_scope.setToolTip("指定批量操作来源目录：双侧全部，或仅左(上)侧/仅右(下)侧")
+        self._layout_orientation = "horizontal"
+        self._update_scope_combobox_items("horizontal")
+        self.cmb_scope.currentIndexChanged.connect(lambda _: self._update_checked_label())
+
         btn_batch_copy = QtWidgets.QPushButton("📋 批量拷贝")
         btn_batch_copy.setProperty("small", "true")
         btn_batch_copy.clicked.connect(self._on_batch_copy)
@@ -105,6 +114,7 @@ class SidebarDrawer(QtWidgets.QFrame):
         btn_batch_cut.setProperty("small", "true")
         btn_batch_cut.clicked.connect(self._on_batch_cut)
 
+        action_row.addWidget(self.cmb_scope, 1)
         action_row.addWidget(btn_batch_copy)
         action_row.addWidget(btn_batch_cut)
         layout.addLayout(action_row)
@@ -223,8 +233,43 @@ class SidebarDrawer(QtWidgets.QFrame):
                     self._checked_paths.discard(str(p))
             self._update_checked_label()
 
+    def _update_scope_combobox_items(self, orientation):
+        self._layout_orientation = orientation
+        curr = self.cmb_scope.currentData() if self.cmb_scope.count() > 0 else "ALL"
+        self.cmb_scope.blockSignals(True)
+        self.cmb_scope.clear()
+        if orientation == "vertical":
+            self.cmb_scope.addItem("🌐 双侧全部", "ALL")
+            self.cmb_scope.addItem("🟦 仅上侧目录", "L")
+            self.cmb_scope.addItem("🟩 仅下侧目录", "R")
+            if hasattr(self, "tab_mode_b"):
+                self.tab_mode_b.setTabText(0, "🟦 上列表")
+                self.tab_mode_b.setTabText(1, "🟩 下列表")
+        else:
+            self.cmb_scope.addItem("🌐 双侧全部", "ALL")
+            self.cmb_scope.addItem("🟦 仅左侧目录", "L")
+            self.cmb_scope.addItem("🟩 仅右侧目录", "R")
+            if hasattr(self, "tab_mode_b"):
+                self.tab_mode_b.setTabText(0, "🟦 左列表")
+                self.tab_mode_b.setTabText(1, "🟩 右列表")
+        idx = self.cmb_scope.findData(curr)
+        self.cmb_scope.setCurrentIndex(idx if idx >= 0 else 0)
+        self.cmb_scope.blockSignals(False)
+
+    def set_layout_orientation(self, orientation):
+        """外部切换窗口排列方式时，同步更新抽屉内的目录标签"""
+        self._update_scope_combobox_items(orientation)
+        self._update_checked_label()
+
     def _update_checked_label(self):
-        self.lbl_checked.setText("已选: %d" % len(self._checked_paths))
+        scope = self.cmb_scope.currentData() if hasattr(self, "cmb_scope") else "ALL"
+        paths = self.get_checked_paths(scope=scope)
+        scope_tip = ""
+        if scope == "L":
+            scope_tip = " (仅上)" if getattr(self, "_layout_orientation", "horizontal") == "vertical" else " (仅左)"
+        elif scope == "R":
+            scope_tip = " (仅下)" if getattr(self, "_layout_orientation", "horizontal") == "vertical" else " (仅右)"
+        self.lbl_checked.setText(f"已选: {len(paths)}{scope_tip}")
 
     def select_all(self):
         widget = self.list_widget
@@ -275,8 +320,22 @@ class SidebarDrawer(QtWidgets.QFrame):
         widget.blockSignals(False)
         self._update_checked_label()
 
-    def get_checked_paths(self):
-        """返回已勾选的所有文件 Path 列表"""
+    def get_checked_paths(self, scope=None):
+        """
+        返回已勾选的文件 Path 列表。
+        scope 为 None 时取 cmb_scope 当前选中项 ('ALL' | 'L' | 'R')。
+        """
+        if scope is None:
+            scope = self.cmb_scope.currentData() if hasattr(self, "cmb_scope") else "ALL"
+        if not scope or scope == "ALL":
+            return [Path(p) for p in self._checked_paths]
+
+        left_set = {str(p) for p in self._left_files}
+        right_set = {str(p) for p in self._right_files}
+        if scope == "L":
+            return [Path(p) for p in self._checked_paths if p in left_set]
+        elif scope == "R":
+            return [Path(p) for p in self._checked_paths if p in right_set]
         return [Path(p) for p in self._checked_paths]
 
     def _on_item_clicked(self, item):
@@ -308,13 +367,17 @@ class SidebarDrawer(QtWidgets.QFrame):
     def _on_batch_copy(self):
         paths = self.get_checked_paths()
         if not paths:
-            QtWidgets.QMessageBox.information(self, "提示", "请先在列表中勾选要拷贝的图像。")
+            scope = self.cmb_scope.currentData() if hasattr(self, "cmb_scope") else "ALL"
+            tip = "列表中所选范围内没有勾选的图像。" if scope != "ALL" else "请先在列表中勾选要拷贝的图像。"
+            QtWidgets.QMessageBox.information(self, "提示", tip)
             return
         self.batchCopyRequested.emit(paths)
 
     def _on_batch_cut(self):
         paths = self.get_checked_paths()
         if not paths:
-            QtWidgets.QMessageBox.information(self, "提示", "请先在列表中勾选要剪切的图像。")
+            scope = self.cmb_scope.currentData() if hasattr(self, "cmb_scope") else "ALL"
+            tip = "列表中所选范围内没有勾选的图像。" if scope != "ALL" else "请先在列表中勾选要剪切的图像。"
+            QtWidgets.QMessageBox.information(self, "提示", tip)
             return
         self.batchCutRequested.emit(paths)

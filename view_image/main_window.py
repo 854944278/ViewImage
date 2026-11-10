@@ -26,6 +26,7 @@ from .core.qt_compat import (
     VERTICAL,
     ALIGN_CENTER,
     DIALOG_ACCEPTED,
+    TOOLBUTTON_MENU_BUTTON_POPUP,
     QColor,
     QShortcut,
     QAction,
@@ -204,31 +205,32 @@ class MainWindow(QtWidgets.QMainWindow):
         btn_fit.setToolTip("自适应窗口 (Ctrl+0)")
         btn_fit.clicked.connect(self._fit_both)
 
-        btn_100 = QtWidgets.QPushButton("1:1")
-        btn_100.setProperty("small", "true")
-        btn_100.setToolTip("100% 原始分辨率 (Ctrl+1)")
-        btn_100.clicked.connect(self._one_to_one_both)
+        # 单张操作按钮（支持直达主点击，并提供下拉独立选择左侧/右侧操作）
+        self.btn_copy = QtWidgets.QToolButton()
+        self.btn_copy.setText("📋 拷贝")
+        self.btn_copy.setProperty("small", "true")
+        self.btn_copy.setToolTip("拷贝当前悬停侧（或左侧）图像至输出目录 (Ctrl+C / Ctrl+S)；右侧下拉可单独选择拷贝左图或右图")
+        self.btn_copy.setPopupMode(TOOLBUTTON_MENU_BUTTON_POPUP)
+        self.btn_copy.clicked.connect(self._copy_hovered)
 
-        btn_zoom_in = QtWidgets.QPushButton("＋")
-        btn_zoom_in.setProperty("small", "true")
-        btn_zoom_in.setFixedWidth(24)
-        btn_zoom_in.clicked.connect(lambda: self._zoom_both(1.25))
+        menu_btn_copy = QtWidgets.QMenu(self.btn_copy)
+        menu_btn_copy.addAction("📋 拷贝当前悬停图像 (Ctrl+C / Ctrl+S)", self._copy_hovered)
+        self.act_btn_copy_l = menu_btn_copy.addAction("🟦 仅拷贝左侧图像 (Shift+C)", self._copy_left)
+        self.act_btn_copy_r = menu_btn_copy.addAction("🟩 仅拷贝右侧图像 (Alt+C)", self._copy_right)
+        self.btn_copy.setMenu(menu_btn_copy)
 
-        btn_zoom_out = QtWidgets.QPushButton("－")
-        btn_zoom_out.setProperty("small", "true")
-        btn_zoom_out.setFixedWidth(24)
-        btn_zoom_out.clicked.connect(lambda: self._zoom_both(0.8))
+        self.btn_cut = QtWidgets.QToolButton()
+        self.btn_cut.setText("✂ 剪切")
+        self.btn_cut.setProperty("small", "true")
+        self.btn_cut.setToolTip("剪切当前悬停侧（或左侧）图像至输出目录并跳转 (Ctrl+X)；右侧下拉可单独选择剪切左图或右图")
+        self.btn_cut.setPopupMode(TOOLBUTTON_MENU_BUTTON_POPUP)
+        self.btn_cut.clicked.connect(self._cut_hovered)
 
-        # 单张操作按钮
-        btn_copy = QtWidgets.QPushButton("📋 拷贝")
-        btn_copy.setProperty("small", "true")
-        btn_copy.setToolTip("拷贝当前悬停侧（或左侧）图像至输出目录 (Ctrl+C / Ctrl+S)")
-        btn_copy.clicked.connect(self._copy_hovered)
-
-        btn_cut = QtWidgets.QPushButton("✂ 剪切")
-        btn_cut.setProperty("small", "true")
-        btn_cut.setToolTip("剪切当前悬停侧（或左侧）图像至输出目录并自动跳至下一张 (Ctrl+X)")
-        btn_cut.clicked.connect(self._cut_hovered)
+        menu_btn_cut = QtWidgets.QMenu(self.btn_cut)
+        menu_btn_cut.addAction("✂ 剪切当前悬停图像 (Ctrl+X)", self._cut_hovered)
+        self.act_btn_cut_l = menu_btn_cut.addAction("🟦 仅剪切左侧图像 (Shift+X)", self._cut_left)
+        self.act_btn_cut_r = menu_btn_cut.addAction("🟩 仅剪切右侧图像 (Alt+X)", self._cut_right)
+        self.btn_cut.setMenu(menu_btn_cut)
 
         # 调色条与侧栏开关
         self.btn_adj = QtWidgets.QPushButton("🎛 调色")
@@ -241,23 +243,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_toggle_sidebar.setToolTip("展开/收起侧边文件列表与批量管理栏 (F3)")
         self.btn_toggle_sidebar.clicked.connect(self._toggle_sidebar)
 
-        btn_help = QtWidgets.QPushButton("❓ 帮助")
-        btn_help.setProperty("small", "true")
-        btn_help.clicked.connect(self._open_help_dialog)
-
         top_layout.addWidget(self.btn_layout)
         top_layout.addWidget(self.chk_link)
         top_layout.addWidget(btn_fit)
-        top_layout.addWidget(btn_100)
-        top_layout.addWidget(btn_zoom_in)
-        top_layout.addWidget(btn_zoom_out)
         top_layout.addSpacing(4)
-        top_layout.addWidget(btn_copy)
-        top_layout.addWidget(btn_cut)
+        top_layout.addWidget(self.btn_copy)
+        top_layout.addWidget(self.btn_cut)
         top_layout.addSpacing(4)
         top_layout.addWidget(self.btn_adj)
         top_layout.addWidget(self.btn_toggle_sidebar)
-        top_layout.addWidget(btn_help)
 
         root.addWidget(top_bar)
 
@@ -331,6 +325,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.right_view.pixelHovered.connect(lambda data: self._on_pixel_hovered("R", data))
         self.left_view.folderDropped.connect(lambda p: self._on_folder_dropped("L", p))
         self.right_view.folderDropped.connect(lambda p: self._on_folder_dropped("R", p))
+        self.left_view.copyRequested.connect(self._copy_left)
+        self.left_view.cutRequested.connect(self._cut_left)
+        self.right_view.copyRequested.connect(self._copy_right)
+        self.right_view.cutRequested.connect(self._cut_right)
 
         self.edt_left.editingFinished.connect(self._on_dirs_changed)
         self.edt_right.editingFinished.connect(self._on_dirs_changed)
@@ -447,11 +445,33 @@ class MainWindow(QtWidgets.QMainWindow):
 
         menu_ops.addSeparator()
 
-        act_copy = menu_ops.addAction("📋 拷贝当前图像到输出目录")
-        act_copy.triggered.connect(self._copy_hovered)
+        # 拷贝子菜单
+        menu_copy = menu_ops.addMenu("📋 拷贝图像(&C)")
+        act_copy_hover = menu_copy.addAction("📋 拷贝当前悬停图像")
+        act_copy_hover.setShortcut("Ctrl+C")
+        act_copy_hover.triggered.connect(self._copy_hovered)
 
-        act_cut = menu_ops.addAction("✂ 剪切当前图像到输出目录")
-        act_cut.triggered.connect(self._cut_hovered)
+        self.act_menu_copy_l = menu_copy.addAction("🟦 仅拷贝左侧图像")
+        self.act_menu_copy_l.setShortcut("Shift+C")
+        self.act_menu_copy_l.triggered.connect(self._copy_left)
+
+        self.act_menu_copy_r = menu_copy.addAction("🟩 仅拷贝右侧图像")
+        self.act_menu_copy_r.setShortcut("Alt+C")
+        self.act_menu_copy_r.triggered.connect(self._copy_right)
+
+        # 剪切子菜单
+        menu_cut = menu_ops.addMenu("✂ 剪切图像(&X)")
+        act_cut_hover = menu_cut.addAction("✂ 剪切当前悬停图像")
+        act_cut_hover.setShortcut("Ctrl+X")
+        act_cut_hover.triggered.connect(self._cut_hovered)
+
+        self.act_menu_cut_l = menu_cut.addAction("🟦 仅剪切左侧图像")
+        self.act_menu_cut_l.setShortcut("Shift+X")
+        self.act_menu_cut_l.triggered.connect(self._cut_left)
+
+        self.act_menu_cut_r = menu_cut.addAction("🟩 仅剪切右侧图像")
+        self.act_menu_cut_r.setShortcut("Alt+X")
+        self.act_menu_cut_r.triggered.connect(self._cut_right)
 
         # ---------------- 帮助菜单 ----------------
         menu_help = menu_bar.addMenu("帮助(&H)")
@@ -474,12 +494,16 @@ class MainWindow(QtWidgets.QMainWindow):
             shortcut = QShortcut(QtGui.QKeySequence(key), self)
             shortcut.activated.connect(lambda d=delta, s=side: self._shortcut_page(d, s))
 
-        # 拷贝快捷键 Ctrl+C / Ctrl+S
+        # 拷贝快捷键 Ctrl+C / Ctrl+S / Shift+C / Alt+C
         QShortcut(QtGui.QKeySequence("Ctrl+S"), self).activated.connect(self._copy_hovered)
         QShortcut(QtGui.QKeySequence("Ctrl+C"), self).activated.connect(self._copy_hovered)
+        QShortcut(QtGui.QKeySequence("Shift+C"), self).activated.connect(self._copy_left)
+        QShortcut(QtGui.QKeySequence("Alt+C"), self).activated.connect(self._copy_right)
 
-        # 剪切快捷键 Ctrl+X
+        # 剪切快捷键 Ctrl+X / Shift+X / Alt+X
         QShortcut(QtGui.QKeySequence("Ctrl+X"), self).activated.connect(self._cut_hovered)
+        QShortcut(QtGui.QKeySequence("Shift+X"), self).activated.connect(self._cut_left)
+        QShortcut(QtGui.QKeySequence("Alt+X"), self).activated.connect(self._cut_right)
 
         # 布局切换快捷键
         QShortcut(QtGui.QKeySequence("Alt+L"), self).activated.connect(self._toggle_layout_orientation)
@@ -627,6 +651,28 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.canvas_splitter.setSizes([1, 1])
 
+        if hasattr(self, "sidebar") and hasattr(self.sidebar, "set_layout_orientation"):
+            self.sidebar.set_layout_orientation(orientation)
+
+        side_l = "上" if orientation == "vertical" else "左"
+        side_r = "下" if orientation == "vertical" else "右"
+        if hasattr(self, "act_btn_copy_l"):
+            self.act_btn_copy_l.setText(f"🟦 仅拷贝{side_l}侧图像 (Shift+C)")
+        if hasattr(self, "act_btn_copy_r"):
+            self.act_btn_copy_r.setText(f"🟩 仅拷贝{side_r}侧图像 (Alt+C)")
+        if hasattr(self, "act_btn_cut_l"):
+            self.act_btn_cut_l.setText(f"🟦 仅剪切{side_l}侧图像 (Shift+X)")
+        if hasattr(self, "act_btn_cut_r"):
+            self.act_btn_cut_r.setText(f"🟩 仅剪切{side_r}侧图像 (Alt+X)")
+        if hasattr(self, "act_menu_copy_l"):
+            self.act_menu_copy_l.setText(f"🟦 仅拷贝{side_l}侧图像")
+        if hasattr(self, "act_menu_copy_r"):
+            self.act_menu_copy_r.setText(f"🟩 仅拷贝{side_r}侧图像")
+        if hasattr(self, "act_menu_cut_l"):
+            self.act_menu_cut_l.setText(f"🟦 仅剪切{side_l}侧图像")
+        if hasattr(self, "act_menu_cut_r"):
+            self.act_menu_cut_r.setText(f"🟩 仅剪切{side_r}侧图像")
+
         # 若处于自适应状态，重新计算视图以适配新视口宽高比
         if self.left_view.is_loaded() and getattr(self.left_view, "_fit_mode", False):
             self.left_view.fit(emit=False)
@@ -760,6 +806,18 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _cut_hovered(self):
         self._cut_current(self._hover_side() or "L")
+
+    def _copy_left(self):
+        self._copy_current("L")
+
+    def _copy_right(self):
+        self._copy_current("R")
+
+    def _cut_left(self):
+        self._cut_current("L")
+
+    def _cut_right(self):
+        self._cut_current("R")
 
     def _batch_copy(self, *args, **kwargs):
         # 兼容单参数 (paths) 与双参数 (side, paths)

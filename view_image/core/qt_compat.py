@@ -86,6 +86,15 @@ QShortcut = getattr(QtWidgets, "QShortcut", None) or QtGui.QShortcut
 QAction = getattr(QtGui, "QAction", None) or getattr(QtWidgets, "QAction", None)
 QActionGroup = getattr(QtGui, "QActionGroup", None) or getattr(QtWidgets, "QActionGroup", None)
 
+# QToolButton 弹出模式兼容
+TOOLBUTTON_MENU_BUTTON_POPUP = getattr(QtWidgets.QToolButton, "MenuButtonPopup", None)
+if TOOLBUTTON_MENU_BUTTON_POPUP is None:
+    popup_mode = getattr(QtWidgets.QToolButton, "ToolButtonPopupMode", None)
+    TOOLBUTTON_MENU_BUTTON_POPUP = getattr(popup_mode, "MenuButtonPopup", 1)
+
+if hasattr(QtWidgets, "QToolButton") and not hasattr(QtWidgets.QToolButton, "MenuButtonPopup"):
+    QtWidgets.QToolButton.MenuButtonPopup = TOOLBUTTON_MENU_BUTTON_POPUP
+
 _SMOOTH_PIXMAP_HINT = getattr(QPainter, "SmoothPixmapTransform", None)
 if _SMOOTH_PIXMAP_HINT is None:
     _render_hint = getattr(QPainter, "RenderHint", None)

@@ -49,6 +49,8 @@ class ImageView(QtWidgets.QWidget):
     pixelHovered = pyqtSignal(object)              # (x, y, gray, r, g, b) 或 None
     folderDropped = pyqtSignal(str)               # 拖入文件夹路径
     fileDropped = pyqtSignal(str)                 # 拖入图片文件路径
+    copyRequested = pyqtSignal()                  # 单张图像拷贝请求
+    cutRequested = pyqtSignal()                   # 单张图像剪切请求
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -454,6 +456,40 @@ class ImageView(QtWidgets.QWidget):
             event.accept()
         else:
             super().mouseDoubleClickEvent(event)
+
+    def contextMenuEvent(self, event):
+        """画板右键专属上下文菜单：支持单图明确裁切/复制与视口快捷工具"""
+        menu = QtWidgets.QMenu(self)
+        side_tag = "左(上)" if self._is_left else "右(下)"
+        if getattr(self, "_panel_title", "").endswith("上"):
+            side_tag = "上"
+        elif getattr(self, "_panel_title", "").endswith("下"):
+            side_tag = "下"
+        elif getattr(self, "_panel_title", "").endswith("左"):
+            side_tag = "左"
+        elif getattr(self, "_panel_title", "").endswith("右"):
+            side_tag = "右"
+
+        act_copy = menu.addAction(f"📋 拷贝此图至输出目录 ({side_tag}侧)")
+        act_copy.setEnabled(self.is_loaded())
+        act_copy.triggered.connect(self.copyRequested.emit)
+
+        act_cut = menu.addAction(f"✂ 剪切此图至输出目录 ({side_tag}侧)")
+        act_cut.setEnabled(self.is_loaded())
+        act_cut.triggered.connect(self.cutRequested.emit)
+
+        menu.addSeparator()
+
+        act_fit = menu.addAction("自适应窗口")
+        act_fit.setEnabled(self.is_loaded())
+        act_fit.triggered.connect(lambda: self.fit(emit=True))
+
+        act_100 = menu.addAction("1:1 原始比例")
+        act_100.setEnabled(self.is_loaded())
+        act_100.triggered.connect(lambda: self.set_one_to_one(emit=True))
+
+        pos = event.globalPos() if hasattr(event, "globalPos") else event.globalPosition().toPoint()
+        menu.exec(pos)
 
     # ---- 拖拽载入文件/文件夹 ----
     def dragEnterEvent(self, event):

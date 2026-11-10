@@ -121,7 +121,7 @@ QLineEdit:disabled {
 }
 
 /* 按钮样式 */
-QPushButton {
+QPushButton, QToolButton {
     background-color: #282d3b;
     border: 1px solid #394154;
     border-radius: 5px;
@@ -131,63 +131,68 @@ QPushButton {
     min-height: 20px;
 }
 
-QPushButton:hover {
+QPushButton:hover, QToolButton:hover {
     background-color: #333a4c;
     border-color: #4a556d;
     color: #ffffff;
 }
 
-QPushButton:pressed {
+QPushButton:pressed, QToolButton:pressed {
     background-color: #1f232e;
     border-color: #2b3240;
 }
 
-QPushButton:disabled {
+QPushButton:disabled, QToolButton:disabled {
     background-color: #1a1c24;
     border-color: #272c38;
     color: #556075;
 }
 
 /* 主操作按钮 (Primary) */
-QPushButton[primary="true"] {
+QPushButton[primary="true"], QToolButton[primary="true"] {
     background-color: #2563eb;
     border: 1px solid #3b82f6;
     color: #ffffff;
     font-weight: 600;
 }
 
-QPushButton[primary="true"]:hover {
+QPushButton[primary="true"]:hover, QToolButton[primary="true"]:hover {
     background-color: #3b82f6;
     border-color: #60a5fa;
 }
 
-QPushButton[primary="true"]:pressed {
+QPushButton[primary="true"]:pressed, QToolButton[primary="true"]:pressed {
     background-color: #1d4ed8;
     border-color: #1e40af;
 }
 
-QPushButton[primary="true"]:disabled {
+QPushButton[primary="true"]:disabled, QToolButton[primary="true"]:disabled {
     background-color: #1e3a5f;
     border-color: #20406d;
     color: #607594;
 }
 
 /* 成功/强调按钮 */
-QPushButton[success="true"] {
+QPushButton[success="true"], QToolButton[success="true"] {
     background-color: #059669;
     border: 1px solid #10b981;
     color: #ffffff;
 }
 
-QPushButton[success="true"]:hover {
+QPushButton[success="true"]:hover, QToolButton[success="true"]:hover {
     background-color: #10b981;
 }
 
 /* 紧凑微型按钮 */
-QPushButton[small="true"] {
+QPushButton[small="true"], QToolButton[small="true"] {
     padding: 3px 8px;
     font-size: 11px;
     min-height: 18px;
+}
+
+QToolButton::menu-button {
+    border-left: 1px solid #394154;
+    width: 14px;
 }
 
 /* 单选框与复选框 */

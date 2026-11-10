@@ -636,6 +636,85 @@ class TestGUIAndFunctionality(unittest.TestCase):
         cfg = mgr.load()
         self.assertEqual(cfg["layout_orientation"], "vertical")
 
+    def test_single_folder_copy_and_cut(self):
+        """测试单独拷贝/剪切单个文件夹图像（单张与批量单文件夹范围过滤）"""
+        win = MainWindow(config_path=self.cfg_path)
+        win.edt_left.setText(self.dir_l)
+        win.edt_right.setText(self.dir_r)
+        win.edt_output.setText(self.dir_out)
+        win.rule_text = "prefix:7"
+        win.mode = "A"
+        win._on_dirs_changed()
+
+        self.assertEqual(len(win.pairs), 5)
+
+        # 1. 单张操作测试：单独拷贝左图与单独拷贝右图
+        win._copy_left()
+        out_files = os.listdir(self.dir_out)
+        self.assertIn("item_01_L.png", out_files)
+        self.assertNotIn("item_01_R.png", out_files)
+
+        win._copy_right()
+        out_files = os.listdir(self.dir_out)
+        self.assertIn("item_01_R.png", out_files)
+
+        # 2. 批量抽屉范围过滤测试
+        win.sidebar.select_all()
+        # 默认全部：应包含全部 10 张图 (5 左 + 5 右)
+        all_paths = win.sidebar.get_checked_paths(scope="ALL")
+        self.assertEqual(len(all_paths), 10)
+
+        # 切换范围至仅左侧目录
+        left_paths = win.sidebar.get_checked_paths(scope="L")
+        self.assertEqual(len(left_paths), 5)
+        self.assertTrue(all("_L.png" in p.name for p in left_paths))
+
+        # 切换范围至仅右侧目录
+        right_paths = win.sidebar.get_checked_paths(scope="R")
+        self.assertEqual(len(right_paths), 5)
+        self.assertTrue(all("_R.png" in p.name for p in right_paths))
+
+        # 3. 模拟在「仅左侧」作用域下执行批量拷贝
+        win.sidebar.cmb_scope.setCurrentIndex(1)  # 仅左侧
+        win._batch_copy(paths=left_paths, policy="rename", prompt=False)
+        out_files_after = os.listdir(self.dir_out)
+        # 验证左侧全部 5 张均已在输出目录中，右侧其余未被批量拷贝
+        for i in range(1, 6):
+            self.assertTrue(any(f"item_{i:02d}_L" in name for name in out_files_after))
+
+        # 4. 验证画板右键上下文菜单
+        self.assertTrue(hasattr(win.left_view, "contextMenuEvent"))
+        self.assertTrue(hasattr(win.right_view, "contextMenuEvent"))
+
+    def test_top_ribbon_simplified(self):
+        """测试顶栏精简化：低频重复按键从顶栏移除，核心功能由工具按钮下拉菜单与系统菜单承载"""
+        win = MainWindow(config_path=self.cfg_path)
+        top_ribbon = win.findChild(QtWidgets.QFrame, "TopRibbon")
+        self.assertIsNotNone(top_ribbon)
+
+        # 验证已升级的拷贝与剪切下拉工具按钮
+        self.assertIsInstance(win.btn_copy, QtWidgets.QToolButton)
+        self.assertIsInstance(win.btn_cut, QtWidgets.QToolButton)
+        self.assertIsNotNone(win.btn_copy.menu())
+        self.assertIsNotNone(win.btn_cut.menu())
+
+        # 顶栏按钮文本集合
+        btn_texts = [b.text() for b in top_ribbon.findChildren(QtWidgets.QAbstractButton)]
+        # 低频重复按键（1:1、＋、－、帮助）已被精简出顶栏
+        self.assertNotIn("1:1", btn_texts)
+        self.assertNotIn("＋", btn_texts)
+        self.assertNotIn("－", btn_texts)
+        self.assertNotIn("❓ 帮助", btn_texts)
+
+        # 核心高频按键依然完整保留
+        self.assertIn(win.btn_paths, top_ribbon.findChildren(QtWidgets.QAbstractButton))
+        self.assertIn("⇄", btn_texts)
+        self.assertIn("适应", btn_texts)
+        self.assertTrue(any("拷贝" in t for t in btn_texts))
+        self.assertTrue(any("剪切" in t for t in btn_texts))
+        self.assertTrue(any("调色" in t for t in btn_texts))
+        self.assertTrue(any("列表" in t for t in btn_texts))
+
 
 if __name__ == "__main__":
     unittest.main()
