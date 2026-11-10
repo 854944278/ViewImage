@@ -431,6 +431,112 @@ class TestGUIAndFunctionality(unittest.TestCase):
             self.assertEqual(status, "copied")
             self.assertTrue(target.endswith("image_1.png"))
 
+    def test_batch_cut_gui_mode_a_with_displayed_image(self):
+        """测试模式 A 下批量剪切（含当前正在展示的图像），验证无锁、无闪退、自动刷新"""
+        win = MainWindow(config_path=self.cfg_path)
+        win.edt_left.setText(self.dir_l)
+        win.edt_right.setText(self.dir_r)
+        win.edt_output.setText(self.dir_out)
+        win.rule_text = "prefix:7"
+        win.mode = "A"
+        win._on_dirs_changed()
+
+        self.assertEqual(len(win.pairs), 5)
+        # 初始状态第 0 对正在展示
+        displayed_l, displayed_r = win.pairs[0]
+        self.assertEqual(win.left_view.current_path(), str(displayed_l))
+
+        # 勾选前 2 对（包含当前正显示的第 0 对）
+        to_cut = [win.pairs[0][0], win.pairs[0][1], win.pairs[1][0], win.pairs[1][1]]
+        win._batch_cut(to_cut, policy="rename", prompt=False)
+
+        # 验证已成功剪切移入输出目录
+        self.assertFalse(displayed_l.exists())
+        self.assertFalse(displayed_r.exists())
+        self.assertEqual(len(os.listdir(self.dir_out)), 4)
+        # 验证配对自动刷新为剩余 3 对，当前展示顺延为新的第 0 对
+        self.assertEqual(len(win.pairs), 3)
+        self.assertTrue(win.left_view.is_loaded())
+
+    def test_batch_cut_gui_cut_all_files(self):
+        """测试批量剪切所有文件（清空整个目录），验证无崩溃并优雅清空视口"""
+        win = MainWindow(config_path=self.cfg_path)
+        win.edt_left.setText(self.dir_l)
+        win.edt_right.setText(self.dir_r)
+        win.edt_output.setText(self.dir_out)
+        win.rule_text = "prefix:7"
+        win.mode = "A"
+        win._on_dirs_changed()
+
+        win.sidebar.select_all()
+        all_paths = win.sidebar.get_checked_paths()
+        self.assertEqual(len(all_paths), 10)
+
+        # 批量剪切全部文件
+        win._batch_cut(all_paths, policy="rename", prompt=False)
+
+        self.assertEqual(len(win.pairs), 0)
+        self.assertEqual(len(win.left_files), 0)
+        self.assertEqual(len(win.right_files), 0)
+        self.assertFalse(win.left_view.is_loaded())
+        self.assertFalse(win.right_view.is_loaded())
+        self.assertEqual(win.lbl_pos.text(), "0 / 0")
+
+    def test_batch_cut_gui_mode_b_and_legacy_signature(self):
+        """测试模式 B 独立翻页下的批量剪切与旧版签名 (side, paths) 兼容调用"""
+        win = MainWindow(config_path=self.cfg_path)
+        win.edt_left.setText(self.dir_l)
+        win.edt_right.setText(self.dir_r)
+        win.edt_output.setText(self.dir_out)
+        win._on_mode_clicked("B")
+
+        self.assertEqual(len(win.left_files), 5)
+        # 兼容旧代码调用签名：win._batch_cut("L", paths, policy="rename", prompt=False)
+        left_to_cut = win.left_files[:2]
+        win._batch_cut("L", left_to_cut, policy="rename", prompt=False)
+
+        self.assertEqual(len(win.left_files), 3)
+        self.assertEqual(len(win.right_files), 5)
+
+    def test_image_view_unlocked_memory_loading_and_unload(self):
+        """测试 ImageView 内存无锁读取：图片正在查看时，磁盘文件可直接删除/移动，且 unload 安全释放"""
+        with tempfile.TemporaryDirectory() as tmp:
+            img_file = Path(tmp) / "lock_test.png"
+            fmt = getattr(QtGui.QImage.Format, "Format_RGB32", None) or getattr(QtGui.QImage, "Format_RGB32", None)
+            img = QtGui.QImage(32, 32, fmt)
+            img.fill(QtGui.QColor(128, 64, 32))
+            img.save(str(img_file))
+
+            view = ImageView()
+            self.assertTrue(view.load_path(img_file))
+            self.assertTrue(view.is_loaded())
+
+            # 磁盘上直接移动文件（模拟剪切），验证 Python 进程内绝无 OS 文件句柄锁定
+            dest = Path(tmp) / "moved_test.png"
+            shutil.move(str(img_file), str(dest))
+            self.assertTrue(dest.exists())
+            self.assertFalse(img_file.exists())
+
+            # 测试安全释放
+            view.unload()
+            self.assertFalse(view.is_loaded())
+            self.assertIsNone(view.current_path())
+
+    def test_same_file_safe_move_and_copy(self):
+        """测试源与目标同目录自身的安全移动与拷贝（不抛 SameFileError）"""
+        with tempfile.TemporaryDirectory() as tmp:
+            f = Path(tmp) / "self.png"
+            f.write_bytes(b"content")
+
+            # 移动至自身所在目录且同名：安全跳过
+            status, target = move_file_safe(f, tmp, policy="overwrite")
+            self.assertEqual(status, "skipped")
+            self.assertTrue(f.exists())
+
+            # 拷贝至自身所在目录且同名（非重命名策略）：安全跳过
+            status, target = copy_file_safe(f, tmp, policy="overwrite")
+            self.assertEqual(status, "skipped")
+
 
 if __name__ == "__main__":
     unittest.main()

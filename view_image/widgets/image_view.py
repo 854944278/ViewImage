@@ -98,26 +98,56 @@ class ImageView(QtWidgets.QWidget):
 
     # ---- 外部交互接口 ----
     def load_path(self, path):
-        """加载图片路径，若路径无效或格式错误返回 False。"""
+        """
+        加载图片路径，若路径无效或格式错误返回 False。
+        采用内存无锁二进制加载（open bytes + loadFromData），杜绝 Windows 下
+        QImage 原生独占文件句柄导致的文件锁定 (WinError 32) 及剪切/移动/删除引发的闪退。
+        """
         self._path = str(path) if path else None
         if not self._path:
             self._clear_image()
             return False
-        image = QImage(self._path)
+        if not os.path.isfile(self._path):
+            self._empty_hint = "文件不存在"
+            self._clear_image()
+            return False
+
+        image = QImage()
+        data = None
+        try:
+            with open(self._path, "rb") as f:
+                data = f.read()
+            if data:
+                image.loadFromData(data)
+        except Exception as exc:
+            image = QImage()
+
+        # 兼容性回退：若从内存数据加载失败，尝试标准加载
         if image.isNull():
-            pixmap = QPixmap(self._path)
-            if not pixmap.isNull():
-                image = pixmap.toImage()
+            image = QImage(self._path)
+            if image.isNull():
+                pixmap = QPixmap(self._path)
+                if not pixmap.isNull():
+                    image = pixmap.toImage()
+
         if image.isNull():
             self._empty_hint = "无法读取该图像文件"
             self._clear_image()
             return False
+
         self._source_image = image
         self._pixmap = QPixmap.fromImage(image)
         if self._fit_mode:
             self._recalc_fit()
         self._refresh_display()
         return True
+
+    def unload(self):
+        """安全释放当前图像资源并清空显示"""
+        self._path = None
+        self._display_filename = ""
+        self._display_fullpath = ""
+        self._clear_image()
 
     def _clear_image(self):
         self._pixmap = QPixmap()

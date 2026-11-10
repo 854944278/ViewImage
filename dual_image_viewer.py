@@ -112,7 +112,7 @@ from view_image.widgets.rule_dialog import RuleDialog
 from view_image.widgets.side_panel import SidePanel
 from view_image.widgets.sidebar_drawer import SidebarDrawer
 from view_image.widgets.styles import DARK_THEME_QSS
-from view_image.main_window import MainWindow, main
+from view_image.main_window import MainWindow, main, setup_exception_hook
 
 CONFIG_NAME = DEFAULT_CONFIG_NAME
 
@@ -160,6 +160,7 @@ __all__ = [
     "HelpDialog",
     "DARK_THEME_QSS",
     "MainWindow",
+    "setup_exception_hook",
     "main",
 ]
 

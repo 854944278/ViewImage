@@ -53,6 +53,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def __init__(self, config_path=None):
         super().__init__()
+        setup_exception_hook()
         self.setWindowTitle("ViewImage 双栏图像查看器  |  %s" % QT_BINDING)
         self.resize(1400, 880)
         self.setMinimumSize(960, 600)
@@ -287,6 +288,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.right_panel = SidePanel("🟩 右视图", is_left=False)
         self.left_panel.view = self.left_view
         self.right_panel.view = self.right_view
+        self.left_panel.batchCutRequested.connect(self._batch_cut)
+        self.right_panel.batchCutRequested.connect(self._batch_cut)
+        self.left_panel.batchCopyRequested.connect(self._batch_copy)
+        self.right_panel.batchCopyRequested.connect(self._batch_copy)
 
         # ---------------- 4. 底部状态栏 ----------------
         status_bar = self.statusBar()
@@ -556,80 +561,163 @@ class MainWindow(QtWidgets.QMainWindow):
     def _cut_hovered(self):
         self._cut_current(self._hover_side() or "L")
 
-    def _batch_copy(self, paths, policy=None):
+    def _batch_copy(self, *args, **kwargs):
+        # 兼容单参数 (paths) 与双参数 (side, paths)
+        prompt = kwargs.get("prompt", True)
+        if len(args) >= 2 and isinstance(args[0], str) and (isinstance(args[1], (list, set, tuple)) or args[1] is None):
+            paths = list(args[1]) if args[1] else []
+            policy = args[2] if len(args) > 2 else kwargs.get("policy", None)
+        elif len(args) >= 1:
+            paths = list(args[0]) if args[0] else []
+            policy = args[1] if len(args) > 1 else kwargs.get("policy", None)
+        else:
+            paths = list(kwargs.get("paths", []))
+            policy = kwargs.get("policy", None)
+
         if not paths:
+            if prompt:
+                QtWidgets.QMessageBox.information(self, "提示", "请先在列表中勾选要拷贝的图像。")
             return
         out_dir = self._validate_output_dir()
         if not out_dir:
             return
 
         # 批量重名预检
-        if policy is None:
-            conflicts = check_conflicts(paths, out_dir)
-            if conflicts:
-                policy = prompt_batch_conflict(self, conflicts, action="拷贝")
-                if not policy:
-                    return
-            else:
-                policy = POLICY_RENAME
+        try:
+            if policy is None:
+                conflicts = check_conflicts(paths, out_dir)
+                if conflicts:
+                    policy = prompt_batch_conflict(self, conflicts, action="拷贝")
+                    if not policy:
+                        return
+                else:
+                    policy = POLICY_RENAME
+        except Exception as exc:
+            if prompt:
+                QtWidgets.QMessageBox.warning(self, "预检异常", f"预检目标冲突时出错：{exc}")
+            return
 
-        successes, skipped, failures = batch_copy_files(paths, out_dir, policy=policy)
+        try:
+            successes, skipped, failures = batch_copy_files(paths, out_dir, policy=policy)
+        except Exception as exc:
+            if prompt:
+                QtWidgets.QMessageBox.critical(self, "批量拷贝异常", f"执行批量拷贝时出错：{exc}")
+            return
+
         msg = "批量拷贝完成：成功 %d 个" % len(successes)
         if skipped:
             msg += "，跳过 %d 个" % len(skipped)
         if failures:
             msg += "，失败 %d 个" % len(failures)
-            QtWidgets.QMessageBox.warning(self, "批量拷贝完成（含错误）", msg)
+            err_details = "\n".join(["• %s: %s" % (os.path.basename(str(p)), err) for p, err in failures[:5]])
+            if len(failures) > 5:
+                err_details += "\n... 等共 %d 个错误" % len(failures)
+            if prompt:
+                QtWidgets.QMessageBox.warning(self, "批量拷贝完成（含错误）", "%s\n\n失败明细：\n%s" % (msg, err_details))
         else:
             self.statusBar().showMessage(msg, 4000)
-            QtWidgets.QMessageBox.information(self, "完成", msg)
+            if prompt:
+                QtWidgets.QMessageBox.information(self, "完成", msg)
 
-    def _batch_cut(self, paths, policy=None):
+    def _batch_cut(self, *args, **kwargs):
+        # 兼容单参数 (paths) 与双参数 (side, paths)
+        prompt = kwargs.get("prompt", True)
+        if len(args) >= 2 and isinstance(args[0], str) and (isinstance(args[1], (list, set, tuple)) or args[1] is None):
+            paths = list(args[1]) if args[1] else []
+            policy = args[2] if len(args) > 2 else kwargs.get("policy", None)
+        elif len(args) >= 1:
+            paths = list(args[0]) if args[0] else []
+            policy = args[1] if len(args) > 1 else kwargs.get("policy", None)
+        else:
+            paths = list(kwargs.get("paths", []))
+            policy = kwargs.get("policy", None)
+
         if not paths:
+            if prompt:
+                QtWidgets.QMessageBox.information(self, "提示", "请先在列表中勾选要剪切的图像。")
             return
         out_dir = self._validate_output_dir()
         if not out_dir:
             return
 
-        # 批量重名预检
-        if policy is None:
-            conflicts = check_conflicts(paths, out_dir)
-            if conflicts:
-                policy = prompt_batch_conflict(self, conflicts, action="剪切")
-                if not policy:
-                    return
-            else:
-                ret = QtWidgets.QMessageBox.question(
-                    self, "确认批量剪切",
-                    "确认将选中的 %d 个图像文件剪切（移动）到输出目录吗？\n"
-                    "文件将从原始文件夹中移出。" % len(paths),
-                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-                    QtWidgets.QMessageBox.Yes
-                )
-                if ret != QtWidgets.QMessageBox.Yes:
-                    return
-                policy = POLICY_RENAME
+        # 批量重名预检与用户确认
+        try:
+            if policy is None:
+                conflicts = check_conflicts(paths, out_dir)
+                if conflicts:
+                    policy = prompt_batch_conflict(self, conflicts, action="剪切")
+                    if not policy:
+                        return
+                else:
+                    ret = QtWidgets.QMessageBox.question(
+                        self, "确认批量剪切",
+                        "确认将选中的 %d 个图像文件剪切（移动）到输出目录吗？\n"
+                        "文件将从原始文件夹中移出。" % len(paths),
+                        QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                        QtWidgets.QMessageBox.Yes
+                    )
+                    if ret != QtWidgets.QMessageBox.Yes:
+                        return
+                    policy = POLICY_RENAME
+        except Exception as exc:
+            if prompt:
+                QtWidgets.QMessageBox.warning(self, "预检异常", f"准备批量剪切时发生错误：{exc}")
+            return
 
-        successes, skipped, failures = batch_move_files(paths, out_dir, policy=policy)
+        # 在剪切移动前，若当前左右视口中展示的图片正是待剪切的文件之一，
+        # 预先安全释放视图路径与内存，杜绝 Windows OS 文件锁 (WinError 32) 或悬空句柄导致的异常
+        try:
+            path_set = {os.path.abspath(str(p)) for p in paths}
+            if self.left_view.current_path() and os.path.abspath(str(self.left_view.current_path())) in path_set:
+                self.left_view.unload()
+            if self.right_view.current_path() and os.path.abspath(str(self.right_view.current_path())) in path_set:
+                self.right_view.unload()
+        except Exception:
+            pass
+
+        # 执行移动
+        try:
+            successes, skipped, failures = batch_move_files(paths, out_dir, policy=policy)
+        except Exception as exc:
+            if prompt:
+                QtWidgets.QMessageBox.critical(self, "批量剪切异常", f"执行文件剪切时发生异常：{exc}")
+            self._refresh_all_after_removal()
+            return
+
+        # 核心防闪退逻辑：在弹出完成提示弹窗之前，立即刷新并同步列表与内部索引状态，
+        # 避免模态弹窗事件循环中主窗口与视口处于非一致状态
+        try:
+            self._refresh_all_after_removal()
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()
+
         msg = "批量剪切完成：成功移动 %d 个" % len(successes)
         if skipped:
             msg += "，跳过 %d 个" % len(skipped)
         if failures:
             msg += "，失败 %d 个" % len(failures)
-            QtWidgets.QMessageBox.warning(self, "批量剪切完成（含错误）", msg)
+            err_details = "\n".join(["• %s: %s" % (os.path.basename(str(p)), err) for p, err in failures[:5]])
+            if len(failures) > 5:
+                err_details += "\n... 等共 %d 个错误" % len(failures)
+            if prompt:
+                QtWidgets.QMessageBox.warning(self, "批量剪切完成（含错误）", "%s\n\n失败明细：\n%s" % (msg, err_details))
         else:
             self.statusBar().showMessage(msg, 4000)
-            QtWidgets.QMessageBox.information(self, "完成", msg)
-
-        self._refresh_all_after_removal()
+            if prompt:
+                QtWidgets.QMessageBox.information(self, "完成", msg)
 
     def _refresh_all_after_removal(self):
-        self.left_files = scan_images(self.edt_left.text().strip())
-        self.right_files = scan_images(self.edt_right.text().strip())
-        self._rebuild_pairs()
-        self._clamp_indices()
-        self._refresh_sidebar()
-        self._show_current()
+        try:
+            self.left_files = scan_images(self.edt_left.text().strip())
+            self.right_files = scan_images(self.edt_right.text().strip())
+            self._rebuild_pairs()
+            self._clamp_indices()
+            self._refresh_sidebar()
+            self._show_current()
+        except Exception as exc:
+            import traceback
+            traceback.print_exc()
 
     # ---- 导航控制 ----
     def _turn_global(self, delta):
@@ -861,6 +949,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.right_view.load_path(None)
                 self.left_view.set_image_title("", "")
                 self.right_view.set_image_title("", "")
+                self.sidebar.select_row("PAIR", -1)
             self.lbl_pos.setText("%d / %d" % (self.pair_index + 1 if total else 0, total))
         elif self.mode == "A":
             left_path = self.left_files[0] if self.left_files else None
@@ -869,15 +958,16 @@ class MainWindow(QtWidgets.QMainWindow):
             self.right_view.load_path(right_path)
             self.left_view.set_image_title(left_path.name if left_path else "", str(left_path) if left_path else "")
             self.right_view.set_image_title(right_path.name if right_path else "", str(right_path) if right_path else "")
-            self.lbl_pos.setText("1 / %d" % max(len(self.left_files), len(self.right_files), 1))
+            total_cnt = max(len(self.left_files), len(self.right_files), 0)
+            self.lbl_pos.setText("%d / %d" % (1 if total_cnt else 0, total_cnt))
         else:
-            left_path = self.left_files[self.left_index] if self.left_files else None
-            right_path = self.right_files[self.right_index] if self.right_files else None
+            left_path = self.left_files[self.left_index] if (self.left_files and 0 <= self.left_index < len(self.left_files)) else None
+            right_path = self.right_files[self.right_index] if (self.right_files and 0 <= self.right_index < len(self.right_files)) else None
             self.left_view.load_path(left_path)
             self.right_view.load_path(right_path)
             self.left_view.set_image_title(left_path.name if left_path else "", str(left_path) if left_path else "")
             self.right_view.set_image_title(right_path.name if right_path else "", str(right_path) if right_path else "")
-            self.sidebar.select_row("L", self.left_index)
+            self.sidebar.select_row("L", self.left_index if self.left_files else -1)
             self.lbl_pos.setText("左 %d/%d ｜ 右 %d/%d" % (
                 self.left_index + 1 if self.left_files else 0, len(self.left_files),
                 self.right_index + 1 if self.right_files else 0, len(self.right_files)
@@ -904,8 +994,40 @@ class MainWindow(QtWidgets.QMainWindow):
         self.lbl_status.setText("   ｜   ".join(parts))
 
 
+def setup_exception_hook():
+    """
+    安装全局未捕获异常捕获器，杜绝 Qt 槽函数未捕获异常导致的程序瞬间闪退。
+    记录完整调用栈并通过友好弹窗提示用户。
+    """
+    old_hook = sys.excepthook
+
+    def _custom_excepthook(exc_type, exc_value, exc_tb):
+        import traceback
+        lines = traceback.format_exception(exc_type, exc_value, exc_tb)
+        err_msg = "".join(lines)
+        sys.stderr.write(err_msg)
+        try:
+            app = QtWidgets.QApplication.instance()
+            if app:
+                QtWidgets.QMessageBox.critical(
+                    None,
+                    "ViewImage 运行提示",
+                    "程序运行中发生异常，已安全拦截并记录：\n\n%s\n\n如需排查请参考控制台日志。" % exc_value
+                )
+        except Exception:
+            pass
+        if old_hook and old_hook is not _custom_excepthook:
+            try:
+                old_hook(exc_type, exc_value, exc_tb)
+            except Exception:
+                pass
+
+    sys.excepthook = _custom_excepthook
+
+
 def main():
     _enable_high_dpi()
+    setup_exception_hook()
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName("DualImageView")
     app.setStyleSheet(DARK_THEME_QSS)

@@ -229,12 +229,16 @@ class SidebarDrawer(QtWidgets.QFrame):
     def select_all(self):
         widget = self.list_widget
         widget.blockSignals(True)
-        for i in range(widget.count()):
-            widget.item(i).setCheckState(CHECK_STATE_CHECKED)
+        count = min(widget.count(), len(self._filtered_indices))
+        for i in range(count):
+            item = widget.item(i)
+            if item:
+                item.setCheckState(CHECK_STATE_CHECKED)
             actual_idx = self._filtered_indices[i]
-            _, paths, _, _ = self._all_display_items[actual_idx]
-            for p in paths:
-                self._checked_paths.add(str(p))
+            if 0 <= actual_idx < len(self._all_display_items):
+                _, paths, _, _ = self._all_display_items[actual_idx]
+                for p in paths:
+                    self._checked_paths.add(str(p))
         widget.blockSignals(False)
         self._update_checked_label()
 
@@ -242,7 +246,9 @@ class SidebarDrawer(QtWidgets.QFrame):
         widget = self.list_widget
         widget.blockSignals(True)
         for i in range(widget.count()):
-            widget.item(i).setCheckState(CHECK_STATE_UNCHECKED)
+            item = widget.item(i)
+            if item:
+                item.setCheckState(CHECK_STATE_UNCHECKED)
         self._checked_paths.clear()
         widget.blockSignals(False)
         self._update_checked_label()
@@ -250,18 +256,22 @@ class SidebarDrawer(QtWidgets.QFrame):
     def invert_selection(self):
         widget = self.list_widget
         widget.blockSignals(True)
-        for i in range(widget.count()):
+        count = min(widget.count(), len(self._filtered_indices))
+        for i in range(count):
             item = widget.item(i)
+            if not item:
+                continue
             actual_idx = self._filtered_indices[i]
-            _, paths, _, _ = self._all_display_items[actual_idx]
-            if item.checkState() == CHECK_STATE_CHECKED:
-                item.setCheckState(CHECK_STATE_UNCHECKED)
-                for p in paths:
-                    self._checked_paths.discard(str(p))
-            else:
-                item.setCheckState(CHECK_STATE_CHECKED)
-                for p in paths:
-                    self._checked_paths.add(str(p))
+            if 0 <= actual_idx < len(self._all_display_items):
+                _, paths, _, _ = self._all_display_items[actual_idx]
+                if item.checkState() == CHECK_STATE_CHECKED:
+                    item.setCheckState(CHECK_STATE_UNCHECKED)
+                    for p in paths:
+                        self._checked_paths.discard(str(p))
+                else:
+                    item.setCheckState(CHECK_STATE_CHECKED)
+                    for p in paths:
+                        self._checked_paths.add(str(p))
         widget.blockSignals(False)
         self._update_checked_label()
 
@@ -273,8 +283,9 @@ class SidebarDrawer(QtWidgets.QFrame):
         filtered_row = self.list_widget.row(item)
         if 0 <= filtered_row < len(self._filtered_indices):
             actual_idx = self._filtered_indices[filtered_row]
-            _, _, row_type, raw_idx = self._all_display_items[actual_idx]
-            self.itemActivated.emit(row_type, raw_idx)
+            if 0 <= actual_idx < len(self._all_display_items):
+                _, _, row_type, raw_idx = self._all_display_items[actual_idx]
+                self.itemActivated.emit(row_type, raw_idx)
 
     def select_row(self, row_type, raw_index):
         """外部同步高亮当前行"""
@@ -282,13 +293,16 @@ class SidebarDrawer(QtWidgets.QFrame):
         widget.blockSignals(True)
         found_filtered_row = -1
         for filtered_row, actual_idx in enumerate(self._filtered_indices):
-            _, _, r_type, r_idx = self._all_display_items[actual_idx]
-            if r_type == row_type and r_idx == raw_index:
-                found_filtered_row = filtered_row
-                break
+            if 0 <= actual_idx < len(self._all_display_items):
+                _, _, r_type, r_idx = self._all_display_items[actual_idx]
+                if r_type == row_type and r_idx == raw_index:
+                    found_filtered_row = filtered_row
+                    break
         widget.setCurrentRow(found_filtered_row)
         if found_filtered_row >= 0:
-            widget.scrollToItem(widget.item(found_filtered_row))
+            target_item = widget.item(found_filtered_row)
+            if target_item:
+                widget.scrollToItem(target_item)
         widget.blockSignals(False)
 
     def _on_batch_copy(self):

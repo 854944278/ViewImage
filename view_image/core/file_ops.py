@@ -61,6 +61,13 @@ def copy_file_safe(source_path, dest_dir, policy=POLICY_RENAME):
     name = os.path.basename(source)
     exact_target = os.path.join(dest_dir, name)
 
+    # 规范化绝对路径，检测源与目标是否完全相同（同目录自身操作）
+    norm_source = os.path.abspath(source)
+    norm_exact_target = os.path.abspath(exact_target)
+
+    if norm_source == norm_exact_target and policy != POLICY_RENAME:
+        return "skipped", exact_target
+
     if os.path.exists(exact_target):
         if policy == POLICY_SKIP:
             return "skipped", exact_target
@@ -92,12 +99,22 @@ def move_file_safe(source_path, dest_dir, policy=POLICY_RENAME):
     name = os.path.basename(source)
     exact_target = os.path.join(dest_dir, name)
 
+    # 规范化绝对路径，检测源与目标是否完全相同（同目录自身移动）
+    norm_source = os.path.abspath(source)
+    norm_exact_target = os.path.abspath(exact_target)
+
+    if norm_source == norm_exact_target:
+        return "skipped", exact_target
+
     if os.path.exists(exact_target):
         if policy == POLICY_SKIP:
             return "skipped", exact_target
         elif policy == POLICY_OVERWRITE:
-            if os.path.abspath(source) != os.path.abspath(exact_target):
-                os.remove(exact_target)
+            if os.path.exists(exact_target) and norm_source != norm_exact_target:
+                try:
+                    os.remove(exact_target)
+                except OSError:
+                    pass
             target = exact_target
         else:  # rename
             target = get_unique_target_path(source, dest_dir)
