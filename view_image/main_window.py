@@ -24,6 +24,7 @@ from .core.file_ops import (
 from .core.qt_compat import (
     HORIZONTAL,
     ALIGN_CENTER,
+    DIALOG_ACCEPTED,
     QColor,
     QShortcut,
     _dialog_exec,
@@ -427,7 +428,7 @@ class MainWindow(QtWidgets.QMainWindow):
             right_dir=self.edt_right.text().strip(),
             output_dir=self.edt_output.text().strip()
         )
-        if _dialog_exec(dlg) == QtWidgets.QDialog.Accepted and dlg.result_paths:
+        if _dialog_exec(dlg) == DIALOG_ACCEPTED and dlg.result_paths:
             self.edt_left.setText(dlg.result_paths["left_dir"])
             self.edt_right.setText(dlg.result_paths["right_dir"])
             self.edt_output.setText(dlg.result_paths["output_dir"])

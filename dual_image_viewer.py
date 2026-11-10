@@ -57,6 +57,8 @@ from view_image.core.qt_compat import (
     _mouse_pos,
     _dialog_exec,
     _enable_high_dpi,
+    DIALOG_ACCEPTED,
+    DIALOG_REJECTED,
 )
 
 from view_image.core.scanner import (
@@ -134,6 +136,11 @@ __all__ = [
     "VERTICAL",
     "CURSOR_OPEN_HAND",
     "CURSOR_CLOSED_HAND",
+    "_mouse_pos",
+    "_dialog_exec",
+    "_enable_high_dpi",
+    "DIALOG_ACCEPTED",
+    "DIALOG_REJECTED",
     "IMAGE_EXTS",
     "MIN_SCALE",
     "MAX_SCALE",

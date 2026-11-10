@@ -5,7 +5,7 @@
 """
 
 from ..core.file_ops import POLICY_OVERWRITE, POLICY_RENAME, POLICY_SKIP
-from ..core.qt_compat import ALIGN_CENTER, QtCore, QtGui, QtWidgets
+from ..core.qt_compat import ALIGN_CENTER, DIALOG_ACCEPTED, _dialog_exec, QtCore, QtGui, QtWidgets
 
 
 class SingleConflictDialog(QtWidgets.QDialog):
@@ -133,8 +133,8 @@ def prompt_single_conflict(parent, filename, action="拷贝"):
     提示单文件冲突，返回 POLICY_RENAME, POLICY_OVERWRITE 或 None (取消)
     """
     dlg = SingleConflictDialog(parent, filename, action=action)
-    res = dlg.exec() if hasattr(dlg, "exec") else dlg.exec_()
-    if res == QtWidgets.QDialog.Accepted:
+    res = _dialog_exec(dlg)
+    if res == DIALOG_ACCEPTED:
         return dlg.policy
     return None
 
@@ -144,7 +144,7 @@ def prompt_batch_conflict(parent, conflict_files, action="拷贝"):
     提示批量冲突，返回 POLICY_RENAME, POLICY_OVERWRITE, POLICY_SKIP 或 None (取消)
     """
     dlg = BatchConflictDialog(parent, conflict_files, action=action)
-    res = dlg.exec() if hasattr(dlg, "exec") else dlg.exec_()
-    if res == QtWidgets.QDialog.Accepted:
+    res = _dialog_exec(dlg)
+    if res == DIALOG_ACCEPTED:
         return dlg.policy
     return None

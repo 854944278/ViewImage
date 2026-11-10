@@ -122,6 +122,34 @@ def _dialog_exec(dialog):
     return fn()
 
 
+# 对话框返回值枚举兼容（Qt5 下为 QDialog.Accepted / Rejected，Qt6 下位于 QDialog.DialogCode）
+DIALOG_ACCEPTED = getattr(QtWidgets.QDialog, "Accepted", None)
+if DIALOG_ACCEPTED is None:
+    DIALOG_ACCEPTED = getattr(getattr(QtWidgets.QDialog, "DialogCode", None), "Accepted", 1)
+
+DIALOG_REJECTED = getattr(QtWidgets.QDialog, "Rejected", None)
+if DIALOG_REJECTED is None:
+    DIALOG_REJECTED = getattr(getattr(QtWidgets.QDialog, "DialogCode", None), "Rejected", 0)
+
+# 为 QtWidgets.QDialog 注入 Accepted / Rejected 属性，兼容 PyQt6 等新绑定
+if not hasattr(QtWidgets.QDialog, "Accepted"):
+    QtWidgets.QDialog.Accepted = DIALOG_ACCEPTED
+if not hasattr(QtWidgets.QDialog, "Rejected"):
+    QtWidgets.QDialog.Rejected = DIALOG_REJECTED
+
+# QMessageBox 标准按钮与返回值兼容（PyQt6 枚举移至 StandardButton）
+_StandardButton = getattr(QtWidgets.QMessageBox, "StandardButton", None)
+if _StandardButton is not None:
+    for _btn in ("Yes", "No", "Ok", "Cancel", "Close", "Apply", "Reset", "Save", "Open"):
+        if not hasattr(QtWidgets.QMessageBox, _btn) and hasattr(_StandardButton, _btn):
+            setattr(QtWidgets.QMessageBox, _btn, getattr(_StandardButton, _btn))
+
+MSGBOX_YES = getattr(QtWidgets.QMessageBox, "Yes", None)
+MSGBOX_NO = getattr(QtWidgets.QMessageBox, "No", None)
+MSGBOX_OK = getattr(QtWidgets.QMessageBox, "Ok", None)
+MSGBOX_CANCEL = getattr(QtWidgets.QMessageBox, "Cancel", None)
+
+
 def _enable_high_dpi():
     """启用高分屏缩放支持。"""
     try:

@@ -33,7 +33,9 @@ from dual_image_viewer import (
     natural_key,
     scan_images,
 )
-from view_image.core.qt_compat import QtGui, QtWidgets
+from view_image.core.qt_compat import DIALOG_ACCEPTED, DIALOG_REJECTED, QtGui, QtWidgets
+from view_image.widgets.path_dialog import PathSettingsDialog
+from unittest.mock import patch
 
 
 class TestScannerAndSorting(unittest.TestCase):
@@ -536,6 +538,52 @@ class TestGUIAndFunctionality(unittest.TestCase):
             # 拷贝至自身所在目录且同名（非重命名策略）：安全跳过
             status, target = copy_file_safe(f, tmp, policy="overwrite")
             self.assertEqual(status, "skipped")
+
+    def test_dialog_code_compatibility_and_path_dialog(self):
+        """测试 QtWidgets.QDialog.Accepted/Rejected 兼容性与路径设置对话框交互"""
+        self.assertTrue(hasattr(QtWidgets.QDialog, "Accepted"))
+        self.assertTrue(hasattr(QtWidgets.QDialog, "Rejected"))
+        self.assertEqual(QtWidgets.QDialog.Accepted, DIALOG_ACCEPTED)
+        self.assertEqual(QtWidgets.QDialog.Rejected, DIALOG_REJECTED)
+        self.assertTrue(hasattr(QtWidgets.QMessageBox, "Yes"))
+        self.assertTrue(hasattr(QtWidgets.QMessageBox, "No"))
+
+        win = MainWindow(config_path=self.cfg_path)
+
+        # 1. 真实 PathSettingsDialog 交互验证
+        dlg = PathSettingsDialog(win, left_dir="L_old", right_dir="R_old", output_dir="O_old")
+        dlg.edt_left.setText("L_new")
+        dlg.edt_right.setText("R_new")
+        dlg.edt_output.setText("O_new")
+        dlg._on_ok()
+        self.assertEqual(dlg.result(), DIALOG_ACCEPTED)
+        self.assertEqual(dlg.result_paths["left_dir"], "L_new")
+
+        # 2. 模拟 _open_path_dialog 成功确认应用
+        with patch("view_image.main_window.PathSettingsDialog") as mock_cls:
+            mock_inst = mock_cls.return_value
+            mock_inst.result_paths = {
+                "left_dir": self.dir_l,
+                "right_dir": self.dir_r,
+                "output_dir": self.dir_out,
+            }
+            with patch("view_image.main_window._dialog_exec", return_value=DIALOG_ACCEPTED):
+                win._open_path_dialog()
+                self.assertEqual(win.edt_left.text(), self.dir_l)
+                self.assertEqual(win.edt_right.text(), self.dir_r)
+                self.assertEqual(win.edt_output.text(), self.dir_out)
+
+        # 3. 模拟 _open_path_dialog 点击取消（DIALOG_REJECTED）
+        with patch("view_image.main_window.PathSettingsDialog") as mock_cls:
+            mock_inst = mock_cls.return_value
+            mock_inst.result_paths = {
+                "left_dir": "/should/not/apply",
+                "right_dir": "/should/not/apply",
+                "output_dir": "/should/not/apply",
+            }
+            with patch("view_image.main_window._dialog_exec", return_value=DIALOG_REJECTED):
+                win._open_path_dialog()
+                self.assertNotEqual(win.edt_left.text(), "/should/not/apply")
 
 
 if __name__ == "__main__":
