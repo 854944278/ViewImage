@@ -150,12 +150,14 @@ class TestConfigManager(unittest.TestCase):
             cfg = mgr.load()
             self.assertEqual(cfg["mode"], "A")
             self.assertTrue(cfg["link_views"])
+            self.assertEqual(cfg["layout_orientation"], "horizontal")
 
             # 修改并保存
             cfg["left_dir"] = "/path/left"
             cfg["right_dir"] = "/path/right"
             cfg["mode"] = "B"
             cfg["pair_index"] = 42
+            cfg["layout_orientation"] = "vertical"
             mgr.save(cfg)
 
             # 再次加载验证
@@ -164,6 +166,7 @@ class TestConfigManager(unittest.TestCase):
             self.assertEqual(loaded["right_dir"], "/path/right")
             self.assertEqual(loaded["mode"], "B")
             self.assertEqual(loaded["pair_index"], 42)
+            self.assertEqual(loaded["layout_orientation"], "vertical")
 
 
 class TestGUIAndFunctionality(unittest.TestCase):
@@ -584,6 +587,54 @@ class TestGUIAndFunctionality(unittest.TestCase):
             with patch("view_image.main_window._dialog_exec", return_value=DIALOG_REJECTED):
                 win._open_path_dialog()
                 self.assertNotEqual(win.edt_left.text(), "/should/not/apply")
+
+    def test_layout_orientation_and_menu_bar(self):
+        """测试左右/上下分屏布局切换、菜单栏与设置持久化"""
+        from view_image.core.qt_compat import HORIZONTAL, VERTICAL
+        win = MainWindow(config_path=self.cfg_path)
+
+        # 1. 验证菜单栏结构
+        mb = win.menuBar()
+        self.assertIsNotNone(mb)
+        menus = [m.title() for m in mb.findChildren(QtWidgets.QMenu)]
+        self.assertTrue(any("文件" in title for title in menus))
+        self.assertTrue(any("视图" in title for title in menus))
+        self.assertTrue(any("操作" in title for title in menus))
+        self.assertTrue(any("帮助" in title for title in menus))
+
+        # 2. 初始默认水平左右排列
+        self.assertEqual(win.layout_orientation, "horizontal")
+        self.assertEqual(win.canvas_splitter.orientation(), HORIZONTAL)
+        self.assertEqual(win.left_view._panel_title, "🟦 左")
+        self.assertEqual(win.right_view._panel_title, "🟩 右")
+        self.assertIn("左右", win.btn_layout.text())
+        self.assertTrue(win.act_layout_h.isChecked())
+        self.assertFalse(win.act_layout_v.isChecked())
+
+        # 3. 切换为上下排列
+        win.set_layout_orientation("vertical")
+        self.assertEqual(win.layout_orientation, "vertical")
+        self.assertEqual(win.canvas_splitter.orientation(), VERTICAL)
+        self.assertEqual(win.left_view._panel_title, "🟦 上")
+        self.assertEqual(win.right_view._panel_title, "🟩 下")
+        self.assertIn("上下", win.btn_layout.text())
+        self.assertTrue(win.act_layout_v.isChecked())
+        self.assertFalse(win.act_layout_h.isChecked())
+
+        # 4. 快捷切换回左右排列
+        win._toggle_layout_orientation()
+        self.assertEqual(win.layout_orientation, "horizontal")
+        self.assertEqual(win.canvas_splitter.orientation(), HORIZONTAL)
+        self.assertEqual(win.left_view._panel_title, "🟦 左")
+        self.assertEqual(win.right_view._panel_title, "🟩 右")
+        self.assertIn("左右", win.btn_layout.text())
+        self.assertTrue(win.act_layout_h.isChecked())
+
+        # 5. 持久化验证：重新加载配置确保保存了当前状态
+        win.set_layout_orientation("vertical")
+        mgr = ConfigManager(self.cfg_path)
+        cfg = mgr.load()
+        self.assertEqual(cfg["layout_orientation"], "vertical")
 
 
 if __name__ == "__main__":

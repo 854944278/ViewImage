@@ -422,4 +422,66 @@ QGroupBox::title {
     padding: 0 6px;
     color: #93c5fd;
 }
+
+/* 顶部菜单栏与下拉菜单 */
+QMenuBar {
+    background-color: #14161d;
+    color: #cbd5e1;
+    border-bottom: 1px solid #232733;
+    padding: 2px 6px;
+    font-size: 12px;
+}
+
+QMenuBar::item {
+    background: transparent;
+    padding: 4px 10px;
+    border-radius: 4px;
+    color: #cbd5e1;
+}
+
+QMenuBar::item:selected {
+    background-color: #272c3a;
+    color: #38bdf8;
+}
+
+QMenuBar::item:pressed {
+    background-color: #1e3a8a;
+    color: #ffffff;
+}
+
+QMenu {
+    background-color: #1c1f29;
+    color: #e2e8f0;
+    border: 1px solid #2f3647;
+    border-radius: 6px;
+    padding: 4px 0;
+    font-size: 12px;
+}
+
+QMenu::item {
+    padding: 6px 26px 6px 20px;
+    border-radius: 3px;
+    margin: 1px 4px;
+}
+
+QMenu::item:selected {
+    background-color: #2563eb;
+    color: #ffffff;
+}
+
+QMenu::item:disabled {
+    color: #64748b;
+}
+
+QMenu::separator {
+    height: 1px;
+    background-color: #2a3142;
+    margin: 4px 8px;
+}
+
+QMenu::indicator {
+    width: 14px;
+    height: 14px;
+    margin-left: 4px;
+}
 """

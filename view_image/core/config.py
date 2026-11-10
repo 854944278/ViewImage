@@ -31,6 +31,7 @@ class ConfigManager:
             "left_index": 0,
             "right_index": 0,
             "show_file_list": True,
+            "layout_orientation": "horizontal",
         }
         if not os.path.isfile(self.config_path):
             return defaults
@@ -46,6 +47,8 @@ class ConfigManager:
             # 校验枚举与整型
             if data["mode"] not in ("A", "B"):
                 data["mode"] = "A"
+            if data.get("layout_orientation") not in ("horizontal", "vertical"):
+                data["layout_orientation"] = "horizontal"
             for idx_key in ("pair_index", "left_index", "right_index"):
                 try:
                     data[idx_key] = max(0, int(data.get(idx_key, 0) or 0))
@@ -71,6 +74,7 @@ class ConfigManager:
                 "left_index": int(data.get("left_index", 0) or 0),
                 "right_index": int(data.get("right_index", 0) or 0),
                 "show_file_list": bool(data.get("show_file_list", True)),
+                "layout_orientation": "vertical" if data.get("layout_orientation") == "vertical" else "horizontal",
             }
             tmp_path = self.config_path + ".tmp"
             with open(tmp_path, "w", encoding="utf-8") as f:

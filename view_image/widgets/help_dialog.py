@@ -48,9 +48,10 @@ class HelpDialog(QtWidgets.QDialog):
         <h3>1. 模式与翻页操作</h3>
         <table>
             <tr><th>操作</th><th>快捷键 / 交互</th><th>说明</th></tr>
-            <tr><td><b>模式 A 翻页</b></td><td><span class="key">←</span> / <span class="key">→</span></td><td>配对完成后，左右两侧图片保持同步对应翻页</td></tr>
-            <tr><td><b>模式 B 右侧翻页</b></td><td><span class="key">←</span> / <span class="key">→</span></td><td>独立翻动右侧图片</td></tr>
-            <tr><td><b>模式 B 左侧翻页</b></td><td><span class="key">Shift + ←</span> / <span class="key">Shift + →</span></td><td>独立翻动左侧图片</td></tr>
+            <tr><td><b>分屏布局切换</b></td><td><span class="key">Alt + L</span> 或点顶部「◫ 左右」/「⬒ 上下」</td><td>支持左右分屏（水平）与上下分屏（垂直）无缝自由切换；支持菜单栏「视图 ➔ 分屏排列」</td></tr>
+            <tr><td><b>模式 A 翻页</b></td><td><span class="key">←</span> / <span class="key">→</span> 或 <span class="key">↑</span> / <span class="key">↓</span></td><td>配对完成后，左右（或上下）两侧图片保持同步对应翻页</td></tr>
+            <tr><td><b>模式 B 右侧/下方翻页</b></td><td><span class="key">←</span> / <span class="key">→</span> 或 <span class="key">↑</span> / <span class="key">↓</span></td><td>独立翻动右侧（或下方）图片</td></tr>
+            <tr><td><b>模式 B 左侧/上方翻页</b></td><td><span class="key">Shift + ←</span> / <span class="key">Shift + →</span> / <span class="key">Shift + ↑</span> / <span class="key">Shift + ↓</span></td><td>独立翻动左侧（或上方）图片</td></tr>
             <tr><td><b>光标所在侧翻页</b></td><td><span class="key">PageUp</span> / <span class="key">PageDown</span></td><td>独立翻动鼠标当前悬停的面板</td></tr>
         </table>
 

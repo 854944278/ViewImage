@@ -82,6 +82,10 @@ ELIDE_MIDDLE = _qt_const("TextElideMode.ElideMiddle", "ElideMiddle")
 # QShortcut 在 Qt5 属于 QtWidgets，Qt6 移到了 QtGui
 QShortcut = getattr(QtWidgets, "QShortcut", None) or QtGui.QShortcut
 
+# QAction 与 QActionGroup 在 Qt5 属于 QtWidgets，Qt6 移到了 QtGui
+QAction = getattr(QtGui, "QAction", None) or getattr(QtWidgets, "QAction", None)
+QActionGroup = getattr(QtGui, "QActionGroup", None) or getattr(QtWidgets, "QActionGroup", None)
+
 _SMOOTH_PIXMAP_HINT = getattr(QPainter, "SmoothPixmapTransform", None)
 if _SMOOTH_PIXMAP_HINT is None:
     _render_hint = getattr(QPainter, "RenderHint", None)

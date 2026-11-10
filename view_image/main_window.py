@@ -23,10 +23,13 @@ from .core.file_ops import (
 )
 from .core.qt_compat import (
     HORIZONTAL,
+    VERTICAL,
     ALIGN_CENTER,
     DIALOG_ACCEPTED,
     QColor,
     QShortcut,
+    QAction,
+    QActionGroup,
     _dialog_exec,
     _enable_high_dpi,
     QtCore,
@@ -77,6 +80,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._loading = False
         self._show_sidebar = True
         self._show_file_list = True
+        self.layout_orientation = "horizontal"
 
         # 兼容性属性（保留供测试套件与脚本访问）
         self.edt_left = QtWidgets.QLineEdit()
@@ -91,6 +95,8 @@ class MainWindow(QtWidgets.QMainWindow):
     # UI 构建
     # =========================================================================
     def _build_ui(self):
+        self._build_menu_bar()
+
         central = QtWidgets.QWidget()
         self.setCentralWidget(central)
         root = QtWidgets.QVBoxLayout(central)
@@ -182,7 +188,12 @@ class MainWindow(QtWidgets.QMainWindow):
 
         top_layout.addStretch(1)
 
-        # 右区：视口、单张拷贝/剪切与功能开关
+        # 右区：视口、分屏排列切换、单张拷贝/剪切与功能开关
+        self.btn_layout = QtWidgets.QPushButton("◫ 左右")
+        self.btn_layout.setProperty("small", "true")
+        self.btn_layout.setToolTip("切换图像窗口排列：左右分屏 ⇄ 上下分屏 (Alt+L)")
+        self.btn_layout.clicked.connect(self._toggle_layout_orientation)
+
         self.chk_link = QtWidgets.QCheckBox("⇋ 联动")
         self.chk_link.setChecked(True)
         self.chk_link.setToolTip("缩放与平移两边保持绝对同步")
@@ -234,6 +245,7 @@ class MainWindow(QtWidgets.QMainWindow):
         btn_help.setProperty("small", "true")
         btn_help.clicked.connect(self._open_help_dialog)
 
+        top_layout.addWidget(self.btn_layout)
         top_layout.addWidget(self.chk_link)
         top_layout.addWidget(btn_fit)
         top_layout.addWidget(btn_100)
@@ -326,10 +338,136 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._build_shortcuts()
 
+    def _build_menu_bar(self):
+        menu_bar = self.menuBar()
+
+        # ---------------- 文件菜单 ----------------
+        menu_file = menu_bar.addMenu("文件(&F)")
+
+        act_paths = menu_file.addAction("📁 路径设置(&P)...")
+        act_paths.setShortcut("Ctrl+O")
+        act_paths.setStatusTip("设置左/右源文件夹与输出目录")
+        act_paths.triggered.connect(self._open_path_dialog)
+
+        act_swap = menu_file.addAction("⇄ 对调左右目录(&S)")
+        act_swap.setStatusTip("对调左目录与右目录")
+        act_swap.triggered.connect(self._swap_dirs)
+
+        menu_file.addSeparator()
+
+        act_refresh = menu_file.addAction("🔄 刷新图像列表(&R)")
+        act_refresh.setShortcut("F5")
+        act_refresh.setStatusTip("重新扫描左右目录中的图像")
+        act_refresh.triggered.connect(self._refresh_all)
+
+        menu_file.addSeparator()
+
+        act_exit = menu_file.addAction("退出(&X)")
+        act_exit.setShortcut("Ctrl+Q")
+        act_exit.setStatusTip("退出 ViewImage")
+        act_exit.triggered.connect(self.close)
+
+        # ---------------- 视图菜单 ----------------
+        menu_view = menu_bar.addMenu("视图(&V)")
+
+        # 排列布局子菜单
+        menu_layout = menu_view.addMenu("◫ 分屏排列(&L)")
+        self.layout_action_group = QActionGroup(self)
+
+        self.act_layout_h = menu_layout.addAction("◫ 左右排列 (水平分屏)(&H)")
+        self.act_layout_h.setCheckable(True)
+        self.act_layout_h.setChecked(True)
+        self.act_layout_h.setShortcut("Alt+H")
+        self.act_layout_h.triggered.connect(lambda: self.set_layout_orientation("horizontal"))
+        self.layout_action_group.addAction(self.act_layout_h)
+
+        self.act_layout_v = menu_layout.addAction("⬒ 上下排列 (垂直分屏)(&V)")
+        self.act_layout_v.setCheckable(True)
+        self.act_layout_v.setShortcut("Alt+V")
+        self.act_layout_v.triggered.connect(lambda: self.set_layout_orientation("vertical"))
+        self.layout_action_group.addAction(self.act_layout_v)
+
+        menu_layout.addSeparator()
+
+        act_toggle_layout = menu_layout.addAction("🔀 快速切换排列方向")
+        act_toggle_layout.setShortcut("Alt+L")
+        act_toggle_layout.triggered.connect(self._toggle_layout_orientation)
+
+        menu_view.addSeparator()
+
+        self.act_link = menu_view.addAction("⇋ 缩放与平移双侧联动")
+        self.act_link.setCheckable(True)
+        self.act_link.setChecked(True)
+        self.act_link.toggled.connect(self._on_link_toggled)
+
+        act_fit = menu_view.addAction("自适应窗口(&F)")
+        act_fit.triggered.connect(self._fit_both)
+
+        act_100 = menu_view.addAction("1:1 原始比例(&1)")
+        act_100.triggered.connect(self._one_to_one_both)
+
+        act_zoom_in = menu_view.addAction("放大(&I)")
+        act_zoom_in.triggered.connect(lambda: self._zoom_both(1.25))
+
+        act_zoom_out = menu_view.addAction("缩小(&O)")
+        act_zoom_out.triggered.connect(lambda: self._zoom_both(0.8))
+
+        menu_view.addSeparator()
+
+        self.act_sidebar = menu_view.addAction("📑 侧边文件列表(&S)")
+        self.act_sidebar.setCheckable(True)
+        self.act_sidebar.setChecked(True)
+        self.act_sidebar.triggered.connect(self._toggle_sidebar)
+
+        self.act_adj = menu_view.addAction("🎛 图像调色工具栏(&A)")
+        self.act_adj.setCheckable(True)
+        self.act_adj.setChecked(False)
+        self.act_adj.triggered.connect(self._toggle_adjustment_bar)
+
+        # ---------------- 操作菜单 ----------------
+        menu_ops = menu_bar.addMenu("操作(&O)")
+
+        self.mode_action_group = QActionGroup(self)
+        self.act_mode_a = menu_ops.addAction("模式 A (成对同步翻页)")
+        self.act_mode_a.setCheckable(True)
+        self.act_mode_a.setChecked(True)
+        self.act_mode_a.triggered.connect(lambda: self._set_mode("A"))
+        self.mode_action_group.addAction(self.act_mode_a)
+
+        self.act_mode_b = menu_ops.addAction("模式 B (双侧独立翻页)")
+        self.act_mode_b.setCheckable(True)
+        self.act_mode_b.setChecked(False)
+        self.act_mode_b.triggered.connect(lambda: self._set_mode("B"))
+        self.mode_action_group.addAction(self.act_mode_b)
+
+        menu_ops.addSeparator()
+
+        act_rule = menu_ops.addAction("📐 设置配对规则(&R)...")
+        act_rule.triggered.connect(self._open_rule_dialog)
+
+        menu_ops.addSeparator()
+
+        act_copy = menu_ops.addAction("📋 拷贝当前图像到输出目录")
+        act_copy.triggered.connect(self._copy_hovered)
+
+        act_cut = menu_ops.addAction("✂ 剪切当前图像到输出目录")
+        act_cut.triggered.connect(self._cut_hovered)
+
+        # ---------------- 帮助菜单 ----------------
+        menu_help = menu_bar.addMenu("帮助(&H)")
+
+        act_help = menu_help.addAction("📖 快捷键与使用说明(&H)...")
+        act_help.triggered.connect(self._open_help_dialog)
+
+        act_about = menu_help.addAction("ℹ️ 关于 ViewImage(&A)")
+        act_about.triggered.connect(self._show_about_dialog)
+
     def _build_shortcuts(self):
         bindings = (
             ("Left", -1, "R"), ("Right", 1, "R"),
+            ("Up", -1, "R"), ("Down", 1, "R"),
             ("Shift+Left", -1, "L"), ("Shift+Right", 1, "L"),
+            ("Shift+Up", -1, "L"), ("Shift+Down", 1, "L"),
             ("PgUp", -1, None), ("PgDown", 1, None),
         )
         for key, delta, side in bindings:
@@ -342,6 +480,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # 剪切快捷键 Ctrl+X
         QShortcut(QtGui.QKeySequence("Ctrl+X"), self).activated.connect(self._cut_hovered)
+
+        # 布局切换快捷键
+        QShortcut(QtGui.QKeySequence("Alt+L"), self).activated.connect(self._toggle_layout_orientation)
+        QShortcut(QtGui.QKeySequence("Alt+H"), self).activated.connect(lambda: self.set_layout_orientation("horizontal"))
+        QShortcut(QtGui.QKeySequence("Alt+V"), self).activated.connect(lambda: self.set_layout_orientation("vertical"))
 
         # 辅助功能快捷键
         QShortcut(QtGui.QKeySequence("F1"), self).activated.connect(self._open_help_dialog)
@@ -388,6 +531,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._show_sidebar = bool(data.get("show_file_list", True))
         self._show_file_list = self._show_sidebar
         self.sidebar.setVisible(self._show_sidebar)
+        self.set_layout_orientation(data.get("layout_orientation", "horizontal"), save=False)
         self._loading = False
         self._update_path_button_tooltip()
 
@@ -405,6 +549,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "left_index": self.left_index,
             "right_index": self.right_index,
             "show_file_list": self._show_sidebar,
+            "layout_orientation": getattr(self, "layout_orientation", "horizontal"),
         }
         self.config_manager.save(data)
         self._update_path_button_tooltip()
@@ -448,11 +593,63 @@ class MainWindow(QtWidgets.QMainWindow):
             self.edt_right.setText(path)
         self._on_dirs_changed()
 
+    def set_layout_orientation(self, orientation, save=True):
+        """
+        设置图像窗口分屏排列方式：
+        'horizontal' (左右分屏) 或 'vertical' (上下分屏)
+        """
+        if orientation not in ("horizontal", "vertical"):
+            orientation = "horizontal"
+        self.layout_orientation = orientation
+
+        if orientation == "vertical":
+            self.canvas_splitter.setOrientation(VERTICAL)
+            self.left_view.set_panel_info("🟦 上", is_left=True)
+            self.right_view.set_panel_info("🟩 下", is_left=False)
+            if hasattr(self, "btn_layout"):
+                self.btn_layout.setText("⬒ 上下")
+                self.btn_layout.setToolTip("当前布局：上下排列。点击切换为左右排列 (Alt+L)")
+            if hasattr(self, "act_layout_v"):
+                self.act_layout_v.setChecked(True)
+            if hasattr(self, "act_layout_h"):
+                self.act_layout_h.setChecked(False)
+        else:
+            self.canvas_splitter.setOrientation(HORIZONTAL)
+            self.left_view.set_panel_info("🟦 左", is_left=True)
+            self.right_view.set_panel_info("🟩 右", is_left=False)
+            if hasattr(self, "btn_layout"):
+                self.btn_layout.setText("◫ 左右")
+                self.btn_layout.setToolTip("当前布局：左右排列。点击切换为上下排列 (Alt+L)")
+            if hasattr(self, "act_layout_h"):
+                self.act_layout_h.setChecked(True)
+            if hasattr(self, "act_layout_v"):
+                self.act_layout_v.setChecked(False)
+
+        self.canvas_splitter.setSizes([1, 1])
+
+        # 若处于自适应状态，重新计算视图以适配新视口宽高比
+        if self.left_view.is_loaded() and getattr(self.left_view, "_fit_mode", False):
+            self.left_view.fit(emit=False)
+        if self.right_view.is_loaded() and getattr(self.right_view, "_fit_mode", False):
+            self.right_view.fit(emit=False)
+
+        if save:
+            self._save_config()
+
+    def _toggle_layout_orientation(self):
+        """快捷切换排列方向"""
+        new_orient = "vertical" if self.layout_orientation == "horizontal" else "horizontal"
+        self.set_layout_orientation(new_orient, save=True)
+        tip = "上下排列" if new_orient == "vertical" else "左右排列"
+        self.statusBar().showMessage(f"已切换图像排列方式为：{tip}", 2500)
+
     def _toggle_sidebar(self):
         self._show_sidebar = not self._show_sidebar
         self._show_file_list = self._show_sidebar
         self.sidebar.setVisible(self._show_sidebar)
         self.btn_toggle_sidebar.setText("📑 列表 (%s)" % ("收起" if self._show_sidebar else "展开"))
+        if hasattr(self, "act_sidebar") and self.act_sidebar.isChecked() != self._show_sidebar:
+            self.act_sidebar.setChecked(self._show_sidebar)
         self._save_config()
 
     def _toggle_file_lists(self):
@@ -463,6 +660,8 @@ class MainWindow(QtWidgets.QMainWindow):
         vis = not self.adj_bar.isVisible()
         self.adj_bar.setVisible(vis)
         self.btn_adj.setText("🎛 调色 (%s)" % ("收起" if vis else "展开"))
+        if hasattr(self, "act_adj") and self.act_adj.isChecked() != vis:
+            self.act_adj.setChecked(vis)
 
     def _on_adjustment_changed(self, target, gray, brightness, contrast):
         if target in ("BOTH", "L"):
@@ -778,6 +977,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
     # ---- 视口变换与联动 ----
     def _on_link_toggled(self, checked):
+        if hasattr(self, "act_link") and self.act_link.isChecked() != checked:
+            self.act_link.setChecked(checked)
+        if hasattr(self, "chk_link") and self.chk_link.isChecked() != checked:
+            self.chk_link.setChecked(checked)
         if checked and not self._loading:
             scale, rel_x, rel_y = self.left_view.current_view()
             self.right_view.apply_view(scale, rel_x, rel_y)
@@ -834,8 +1037,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self._save_config()
         self._refresh_all()
 
+    def _set_mode(self, mode):
+        if mode == "A":
+            self.rb_mode_a.setChecked(True)
+        else:
+            self.rb_mode_b.setChecked(True)
+        self._on_mode_clicked(mode)
+
     def _on_mode_clicked(self, mode):
         self.mode = mode
+        if hasattr(self, "act_mode_a"):
+            self.act_mode_a.setChecked(mode == "A")
+        if hasattr(self, "act_mode_b"):
+            self.act_mode_b.setChecked(mode == "B")
         self._refresh_all()
         self._save_config()
 
@@ -856,6 +1070,23 @@ class MainWindow(QtWidgets.QMainWindow):
     def _open_help_dialog(self):
         dialog = HelpDialog(self)
         _dialog_exec(dialog)
+
+    def _show_about_dialog(self):
+        QtWidgets.QMessageBox.about(
+            self,
+            "关于 ViewImage",
+            "<h3>ViewImage 双栏图像查看器</h3>"
+            "<p>轻量、极速的高清工业级图像对比与质检工具。</p>"
+            "<p><b>核心特性：</b></p>"
+            "<ul>"
+            "<li><b>分屏布局自由切换</b>：支持左右分屏 (水平) 与上下分屏 (垂直) 动态无缝切换 (Alt+L)</li>"
+            "<li><b>双浏览模式</b>：模式 A 智能配对同步翻页，模式 B 双侧独立翻页</li>"
+            "<li><b>无锁二进制加载</b>：杜绝 Windows 文件占用锁死，随时剪切/移动/删除不闪退</li>"
+            "<li><b>安全文件流转</b>：单张与批量防覆盖递增重命名、目标冲突预检与决策</li>"
+            "<li><b>实时物理取色</b>：光标悬停原图像素坐标、灰度值、RGB 色值及物理色块探针</li>"
+            "</ul>"
+            "<p>当前 Qt 绑定：<b>%s</b></p>" % QT_BINDING,
+        )
 
     # =========================================================================
     # 数据刷新与展示

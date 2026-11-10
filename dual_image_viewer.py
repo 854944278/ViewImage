@@ -59,6 +59,8 @@ from view_image.core.qt_compat import (
     _enable_high_dpi,
     DIALOG_ACCEPTED,
     DIALOG_REJECTED,
+    QAction,
+    QActionGroup,
 )
 
 from view_image.core.scanner import (
@@ -141,6 +143,8 @@ __all__ = [
     "_enable_high_dpi",
     "DIALOG_ACCEPTED",
     "DIALOG_REJECTED",
+    "QAction",
+    "QActionGroup",
     "IMAGE_EXTS",
     "MIN_SCALE",
     "MAX_SCALE",
