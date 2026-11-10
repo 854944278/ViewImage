@@ -12,6 +12,7 @@ from ..core.qt_compat import (
     CURSOR_CROSS,
     CURSOR_OPEN_HAND,
     DASH_LINE,
+    ELIDE_MIDDLE,
     PEN_NO_PEN,
     FORMAT_GRAY8,
     FORMAT_RGB888,
@@ -67,6 +68,12 @@ class ImageView(QtWidgets.QWidget):
         self._show_crosshair = False
         self._empty_hint = "未加载图像"
 
+        # 悬浮标识配置
+        self._panel_title = "左视图"
+        self._is_left = True
+        self._display_filename = ""
+        self._display_fullpath = ""
+
         # 主题色彩
         self._bg_color = QColor("#121317")
         self._border_color = QColor("#222631")
@@ -77,6 +84,17 @@ class ImageView(QtWidgets.QWidget):
         self.setMouseTracking(True)
         self.setAcceptDrops(True)
         self.setCursor(QtGui.QCursor(CURSOR_OPEN_HAND))
+
+    def set_panel_info(self, title, is_left=True):
+        self._panel_title = title
+        self._is_left = is_left
+        self.update()
+
+    def set_image_title(self, filename, full_path=""):
+        self._display_filename = filename or ""
+        self._display_fullpath = full_path or ""
+        self.setToolTip(self._display_fullpath if self._display_fullpath else self._display_filename)
+        self.update()
 
     # ---- 外部交互接口 ----
     def load_path(self, path):
@@ -314,13 +332,30 @@ class ImageView(QtWidgets.QWidget):
             painter.drawLine(0, int(cy), self.width(), int(cy))
             painter.drawLine(int(cx), 0, int(cx), self.height())
 
-        # 右下角半透明缩放比 HUD
-        scale_text = "%d%%" % round(self._scale * 100)
+        # 左上角悬浮半透明文件名标识胶囊 (极简无框设计)
+        badge_text = "%s: %s" % (self._panel_title, self._display_filename if self._display_filename else "未加载")
         font = painter.font()
         font.setPointSize(9)
+        font.setBold(True)
         painter.setFont(font)
         fm = QtGui.QFontMetrics(font)
-        tw = fm.horizontalAdvance(scale_text) if hasattr(fm, "horizontalAdvance") else fm.width(scale_text)
+        bw = fm.horizontalAdvance(badge_text) if hasattr(fm, "horizontalAdvance") else fm.width(badge_text)
+        badge_w, badge_h = min(bw + 18, self.width() - 20), 22
+        badge_rect = QRectF(8, 8, badge_w, badge_h)
+        painter.setPen(PEN_NO_PEN)
+        painter.setBrush(QColor(3, 105, 161, 210) if self._is_left else QColor(4, 120, 87, 210))
+        painter.drawRoundedRect(badge_rect, 4, 4)
+        painter.setPen(QColor("#f8fafc"))
+        elided = fm.elidedText(badge_text, ELIDE_MIDDLE, badge_w - 12)
+        painter.drawText(badge_rect, int(ALIGN_CENTER), elided)
+
+        # 右下角半透明缩放比 HUD
+        scale_text = "%d%%" % round(self._scale * 100)
+        font.setPointSize(9)
+        font.setBold(False)
+        painter.setFont(font)
+        fm_s = QtGui.QFontMetrics(font)
+        tw = fm_s.horizontalAdvance(scale_text) if hasattr(fm_s, "horizontalAdvance") else fm_s.width(scale_text)
         hud_w, hud_h = tw + 12, 18
         hud_rect = QRectF(self.width() - hud_w - 8, self.height() - hud_h - 8, hud_w, hud_h)
         painter.setPen(PEN_NO_PEN)

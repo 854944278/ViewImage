@@ -77,6 +77,8 @@ ITEM_IS_ENABLED = _qt_const("ItemFlag.ItemIsEnabled", "ItemIsEnabled")
 CHECK_STATE_CHECKED = _qt_const("CheckState.Checked", "Checked")
 CHECK_STATE_UNCHECKED = _qt_const("CheckState.Unchecked", "Unchecked")
 
+ELIDE_MIDDLE = _qt_const("TextElideMode.ElideMiddle", "ElideMiddle")
+
 # QShortcut 在 Qt5 属于 QtWidgets，Qt6 移到了 QtGui
 QShortcut = getattr(QtWidgets, "QShortcut", None) or QtGui.QShortcut
 

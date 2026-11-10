@@ -82,11 +82,15 @@ from view_image.core.config import (
 )
 
 from view_image.core.file_ops import (
-    get_unique_target_path,
-    copy_file_safe,
-    move_file_safe,
+    POLICY_OVERWRITE,
+    POLICY_RENAME,
+    POLICY_SKIP,
     batch_copy_files,
     batch_move_files,
+    check_conflicts,
+    copy_file_safe,
+    get_unique_target_path,
+    move_file_safe,
 )
 
 from view_image.widgets.image_view import (
@@ -95,9 +99,18 @@ from view_image.widgets.image_view import (
     MAX_SCALE,
 )
 
-from view_image.widgets.side_panel import SidePanel
-from view_image.widgets.rule_dialog import RuleDialog
+from view_image.widgets.adjustment_bar import ImageAdjustmentBar
+from view_image.widgets.conflict_dialog import (
+    BatchConflictDialog,
+    SingleConflictDialog,
+    prompt_batch_conflict,
+    prompt_single_conflict,
+)
 from view_image.widgets.help_dialog import HelpDialog
+from view_image.widgets.path_dialog import PathSettingsDialog
+from view_image.widgets.rule_dialog import RuleDialog
+from view_image.widgets.side_panel import SidePanel
+from view_image.widgets.sidebar_drawer import SidebarDrawer
 from view_image.widgets.styles import DARK_THEME_QSS
 from view_image.main_window import MainWindow, main
 
@@ -126,6 +139,7 @@ __all__ = [
     "MAX_SCALE",
     "CONFIG_NAME",
     "get_unique_target_path",
+    "check_conflicts",
     "copy_file_safe",
     "move_file_safe",
     "batch_copy_files",

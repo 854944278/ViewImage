@@ -24,6 +24,7 @@ from dual_image_viewer import (
     batch_copy_files,
     batch_move_files,
     build_pairs,
+    check_conflicts,
     common_prefix_len,
     common_suffix_len,
     copy_file_safe,
@@ -257,12 +258,12 @@ class TestGUIAndFunctionality(unittest.TestCase):
         self.assertEqual(win.edt_right.text(), self.dir_l)
 
         # 保存当前图像至输出目录
-        win._save_current("L")
+        win._save_current("L", policy="rename")
         out_files = os.listdir(self.dir_out)
         self.assertEqual(len(out_files), 1)
 
         # 再次保存：自动追加后缀不覆盖
-        win._save_current("L")
+        win._save_current("L", policy="rename")
         out_files_2 = os.listdir(self.dir_out)
         self.assertEqual(len(out_files_2), 2)
         self.assertTrue(any("_1" in f for f in out_files_2))
@@ -312,17 +313,20 @@ class TestGUIAndFunctionality(unittest.TestCase):
             f1.write_bytes(b"content_1")
 
             # 首次拷贝
-            t1 = copy_file_safe(f1, out_dir)
+            status1, t1 = copy_file_safe(f1, out_dir)
+            self.assertEqual(status1, "copied")
             self.assertTrue(os.path.isfile(t1))
             self.assertEqual(os.path.basename(t1), "test_img.png")
             self.assertTrue(f1.exists())  # 拷贝不删除源文件
 
             # 重名再次拷贝：自动递增 _1
-            t2 = copy_file_safe(f1, out_dir)
+            status2, t2 = copy_file_safe(f1, out_dir)
+            self.assertEqual(status2, "copied")
             self.assertEqual(os.path.basename(t2), "test_img_1.png")
 
             # 剪切（移动）
-            t3 = move_file_safe(f1, out_dir)
+            status3, t3 = move_file_safe(f1, out_dir)
+            self.assertEqual(status3, "moved")
             self.assertEqual(os.path.basename(t3), "test_img_2.png")
             self.assertFalse(f1.exists())  # 源文件已被移走
 
@@ -340,14 +344,14 @@ class TestGUIAndFunctionality(unittest.TestCase):
                 files.append(p)
 
             # 批量拷贝
-            successes, failures = batch_copy_files(files, out_dir)
+            successes, skipped, failures = batch_copy_files(files, out_dir)
             self.assertEqual(len(successes), 5)
             self.assertEqual(len(failures), 0)
             self.assertEqual(len(os.listdir(out_dir)), 5)
             self.assertEqual(len(os.listdir(src_dir)), 5)
 
             # 批量剪切剩余文件
-            successes_cut, failures_cut = batch_move_files(files, out_dir)
+            successes_cut, skipped_cut, failures_cut = batch_move_files(files, out_dir)
             self.assertEqual(len(successes_cut), 5)
             self.assertEqual(len(failures_cut), 0)
             self.assertEqual(len(os.listdir(src_dir)), 0)  # 源文件全部移出
@@ -365,8 +369,8 @@ class TestGUIAndFunctionality(unittest.TestCase):
         self.assertEqual(len(win.pairs), 5)
         first_left_file = win.pairs[0][0]
 
-        # 剪切当前左侧图片
-        win._cut_current("L")
+        # 剪切当前左侧图片（指定 policy 避免弹窗阻塞无头测试）
+        win._cut_current("L", policy="rename")
 
         # 验证文件已从左目录移走并进入输出目录
         self.assertFalse(first_left_file.exists())
@@ -383,19 +387,49 @@ class TestGUIAndFunctionality(unittest.TestCase):
         win.mode = "A"
         win._on_dirs_changed()
 
-        # 测试全选
-        win.left_panel.select_all()
-        checked_l = win.left_panel.get_checked_paths()
-        self.assertEqual(len(checked_l), 5)
-
-        # 验证成对联动勾选到右侧
-        checked_r = win.right_panel.get_checked_paths()
-        self.assertEqual(len(checked_r), 5)
+        # 测试侧边抽屉列表全选（模式 A 下 5 对包含左右共 10 个文件）
+        win.sidebar.select_all()
+        checked = win.sidebar.get_checked_paths()
+        self.assertEqual(len(checked), 10)
 
         # 清空全选
-        win.left_panel.unselect_all()
-        self.assertEqual(len(win.left_panel.get_checked_paths()), 0)
-        self.assertEqual(len(win.right_panel.get_checked_paths()), 0)
+        win.sidebar.unselect_all()
+        self.assertEqual(len(win.sidebar.get_checked_paths()), 0)
+
+        # 针对冲突检测函数进行单元测试
+        conflicts = check_conflicts([self.pairs_sample_file if hasattr(self, 'pairs_sample_file') else win.pairs[0][0]], self.dir_out)
+        self.assertIsInstance(conflicts, list)
+
+    def test_conflict_policies(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            src = Path(tmpdir) / "image.png"
+            src.write_bytes(b"source_content")
+            out = Path(tmpdir) / "output"
+            out.mkdir(parents=True, exist_ok=True)
+
+            # 首次复制
+            copy_file_safe(src, str(out))
+            existing_target = out / "image.png"
+            self.assertTrue(existing_target.exists())
+
+            # 冲突检测
+            conflicts = check_conflicts([src], str(out))
+            self.assertEqual(conflicts, ["image.png"])
+
+            # 策略 1: SKIP 跳过
+            status, target = copy_file_safe(src, str(out), policy="skip")
+            self.assertEqual(status, "skipped")
+
+            # 策略 2: OVERWRITE 覆盖
+            src.write_bytes(b"updated_content")
+            status, target = copy_file_safe(src, str(out), policy="overwrite")
+            self.assertEqual(status, "copied")
+            self.assertEqual(existing_target.read_bytes(), b"updated_content")
+
+            # 策略 3: RENAME 递增
+            status, target = copy_file_safe(src, str(out), policy="rename")
+            self.assertEqual(status, "copied")
+            self.assertTrue(target.endswith("image_1.png"))
 
 
 if __name__ == "__main__":
