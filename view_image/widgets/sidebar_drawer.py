@@ -25,6 +25,7 @@ class SidebarDrawer(QtWidgets.QFrame):
     itemActivated = pyqtSignal(str, int)     # ("PAIR"|"L"|"R", index)
     batchCopyRequested = pyqtSignal(list)    # [Path, ...]
     batchCutRequested = pyqtSignal(list)     # [Path, ...]
+    sideChanged = pyqtSignal(str)            # "L" | "R" (模式 B 切换选项卡)
     closeRequested = pyqtSignal()
 
     def __init__(self, parent=None):
@@ -191,9 +192,21 @@ class SidebarDrawer(QtWidgets.QFrame):
         all_paths = {str(p) for _, paths, _, _ in self._all_display_items for p in paths}
         self._checked_paths.intersection_update(all_paths)
 
-    def _on_tab_changed(self, _):
+    def _on_tab_changed(self, idx):
         self._rebuild_items()
         self._apply_filter(self.edt_filter.text())
+        side = "R" if idx == 1 else "L"
+        self.sideChanged.emit(side)
+
+    def set_active_side(self, side):
+        """设置模式 B 下侧边栏当前激活的选项卡 ('L' 或 'R')"""
+        idx = 1 if str(side).upper() == "R" else 0
+        if hasattr(self, "tab_mode_b") and self.tab_mode_b.currentIndex() != idx:
+            self.tab_mode_b.blockSignals(True)
+            self.tab_mode_b.setCurrentIndex(idx)
+            self._rebuild_items()
+            self._apply_filter(self.edt_filter.text())
+            self.tab_mode_b.blockSignals(False)
 
     def _apply_filter(self, filter_text=""):
         filter_text = (filter_text or "").strip().lower()
@@ -348,6 +361,11 @@ class SidebarDrawer(QtWidgets.QFrame):
 
     def select_row(self, row_type, raw_index):
         """外部同步高亮当前行"""
+        if row_type in ("L", "R") and self.tab_mode_b.isVisible():
+            target_idx = 1 if row_type == "R" else 0
+            if self.tab_mode_b.currentIndex() != target_idx:
+                self.set_active_side(row_type)
+
         widget = self.list_widget
         widget.blockSignals(True)
         found_filtered_row = -1

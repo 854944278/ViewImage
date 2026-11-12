@@ -142,6 +142,18 @@ QPushButton:pressed, QToolButton:pressed {
     border-color: #2b3240;
 }
 
+QPushButton:checked, QToolButton:checked {
+    background-color: #2563eb;
+    border: 1px solid #3b82f6;
+    color: #ffffff;
+    font-weight: 600;
+}
+
+QPushButton:checked:hover, QToolButton:checked:hover {
+    background-color: #3b82f6;
+    border-color: #60a5fa;
+}
+
 QPushButton:disabled, QToolButton:disabled {
     background-color: #1a1c24;
     border-color: #272c38;

@@ -82,6 +82,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._show_sidebar = True
         self._show_file_list = True
         self.layout_orientation = "horizontal"
+        self.window_count = 2
+        self.single_view_side = "L"
 
         # 兼容性属性（保留供测试套件与脚本访问）
         self.edt_left = QtWidgets.QLineEdit()
@@ -189,7 +191,26 @@ class MainWindow(QtWidgets.QMainWindow):
 
         top_layout.addStretch(1)
 
-        # 右区：视口、分屏排列切换、单张拷贝/剪切与功能开关
+        # 右区：窗口数量控制、分屏排列切换、视口联动、单张拷贝/剪切与功能开关
+        self.btn_win_1 = QtWidgets.QPushButton("🗖 1 窗口")
+        self.btn_win_1.setProperty("small", "true")
+        self.btn_win_1.setCheckable(True)
+        self.btn_win_1.setToolTip("单窗口独占模式 (Alt+1)")
+        self.btn_win_1.clicked.connect(lambda: self.set_window_count(1))
+
+        self.btn_win_2 = QtWidgets.QPushButton("◫ 2 窗口")
+        self.btn_win_2.setProperty("small", "true")
+        self.btn_win_2.setCheckable(True)
+        self.btn_win_2.setChecked(True)
+        self.btn_win_2.setToolTip("双窗口分屏对比模式 (Alt+2)")
+        self.btn_win_2.clicked.connect(lambda: self.set_window_count(2))
+
+        self.btn_single_side = QtWidgets.QPushButton("🟦 左 ⇄")
+        self.btn_single_side.setProperty("small", "true")
+        self.btn_single_side.setToolTip("切换单窗口显示侧别 (Alt+S)")
+        self.btn_single_side.clicked.connect(self._toggle_single_view_side)
+        self.btn_single_side.setVisible(False)
+
         self.btn_layout = QtWidgets.QPushButton("◫ 左右")
         self.btn_layout.setProperty("small", "true")
         self.btn_layout.setToolTip("切换图像窗口排列：左右分屏 ⇄ 上下分屏 (Alt+L)")
@@ -243,6 +264,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.btn_toggle_sidebar.setToolTip("展开/收起侧边文件列表与批量管理栏 (F3)")
         self.btn_toggle_sidebar.clicked.connect(self._toggle_sidebar)
 
+        top_layout.addWidget(self.btn_win_1)
+        top_layout.addWidget(self.btn_win_2)
+        top_layout.addWidget(self.btn_single_side)
         top_layout.addWidget(self.btn_layout)
         top_layout.addWidget(self.chk_link)
         top_layout.addWidget(btn_fit)
@@ -268,6 +292,7 @@ class MainWindow(QtWidgets.QMainWindow):
         # 左侧边抽屉列表
         self.sidebar = SidebarDrawer()
         self.sidebar.itemActivated.connect(self._on_sidebar_item_activated)
+        self.sidebar.sideChanged.connect(self._on_sidebar_side_changed)
         self.sidebar.batchCopyRequested.connect(self._batch_copy)
         self.sidebar.batchCutRequested.connect(self._batch_cut)
         self.sidebar.closeRequested.connect(self._toggle_sidebar)
@@ -367,6 +392,31 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # ---------------- 视图菜单 ----------------
         menu_view = menu_bar.addMenu("视图(&V)")
+
+        # 窗口数量子菜单
+        menu_windows = menu_view.addMenu("🗖 窗口数量(&W)")
+        self.win_count_action_group = QActionGroup(self)
+
+        self.act_win_1 = menu_windows.addAction("🗖 1 个窗口 (单图独占)(&1)")
+        self.act_win_1.setCheckable(True)
+        self.act_win_1.setShortcut("Alt+1")
+        self.act_win_1.triggered.connect(lambda: self.set_window_count(1))
+        self.win_count_action_group.addAction(self.act_win_1)
+
+        self.act_win_2 = menu_windows.addAction("◫ 2 个窗口 (双图分屏)(&2)")
+        self.act_win_2.setCheckable(True)
+        self.act_win_2.setChecked(True)
+        self.act_win_2.setShortcut("Alt+2")
+        self.act_win_2.triggered.connect(lambda: self.set_window_count(2))
+        self.win_count_action_group.addAction(self.act_win_2)
+
+        menu_windows.addSeparator()
+
+        self.act_switch_side = menu_windows.addAction("⇄ 切换单窗口显示侧别(&S)")
+        self.act_switch_side.setShortcut("Alt+S")
+        self.act_switch_side.triggered.connect(self._toggle_single_view_side)
+
+        menu_view.addSeparator()
 
         # 排列布局子菜单
         menu_layout = menu_view.addMenu("◫ 分屏排列(&L)")
@@ -510,6 +560,11 @@ class MainWindow(QtWidgets.QMainWindow):
         QShortcut(QtGui.QKeySequence("Alt+H"), self).activated.connect(lambda: self.set_layout_orientation("horizontal"))
         QShortcut(QtGui.QKeySequence("Alt+V"), self).activated.connect(lambda: self.set_layout_orientation("vertical"))
 
+        # 窗口数量与单窗口侧别快捷键
+        QShortcut(QtGui.QKeySequence("Alt+1"), self).activated.connect(lambda: self.set_window_count(1))
+        QShortcut(QtGui.QKeySequence("Alt+2"), self).activated.connect(lambda: self.set_window_count(2))
+        QShortcut(QtGui.QKeySequence("Alt+S"), self).activated.connect(self._toggle_single_view_side)
+
         # 辅助功能快捷键
         QShortcut(QtGui.QKeySequence("F1"), self).activated.connect(self._open_help_dialog)
         QShortcut(QtGui.QKeySequence("F3"), self).activated.connect(self._toggle_sidebar)
@@ -523,13 +578,18 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.mode == "A":
             self._turn_pair(delta)
             return
-        target = side or self._hover_side()
+        if getattr(self, "window_count", 2) == 1:
+            target = getattr(self, "single_view_side", "L")
+        else:
+            target = side or self._hover_side()
         self._turn_side(target or "R", delta)
 
     def _hover_side(self):
+        if self.mode == "B" and getattr(self, "window_count", 2) == 1:
+            return getattr(self, "single_view_side", "L")
         global_pos = QtGui.QCursor.pos()
         for side, view in (("L", self.left_view), ("R", self.right_view)):
-            if view.rect().contains(view.mapFromGlobal(global_pos)):
+            if view.isVisible() and view.rect().contains(view.mapFromGlobal(global_pos)):
                 return side
         return None
 
@@ -555,7 +615,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self._show_sidebar = bool(data.get("show_file_list", True))
         self._show_file_list = self._show_sidebar
         self.sidebar.setVisible(self._show_sidebar)
+        self.window_count = 1 if int(data.get("window_count", 2) or 2) == 1 else 2
+        self.single_view_side = "R" if str(data.get("single_view_side", "L") or "L").upper() == "R" else "L"
         self.set_layout_orientation(data.get("layout_orientation", "horizontal"), save=False)
+        if self.mode == "B":
+            self.set_window_count(self.window_count, save=False)
+            self.set_single_view_side(self.single_view_side, save=False)
+        else:
+            self.left_view.setVisible(True)
+            self.right_view.setVisible(True)
+            self.canvas_splitter.setSizes([1, 1])
+            self._update_window_controls_state()
         self._loading = False
         self._update_path_button_tooltip()
 
@@ -574,6 +644,8 @@ class MainWindow(QtWidgets.QMainWindow):
             "right_index": self.right_index,
             "show_file_list": self._show_sidebar,
             "layout_orientation": getattr(self, "layout_orientation", "horizontal"),
+            "window_count": getattr(self, "window_count", 2),
+            "single_view_side": getattr(self, "single_view_side", "L"),
         }
         self.config_manager.save(data)
         self._update_path_button_tooltip()
@@ -649,7 +721,12 @@ class MainWindow(QtWidgets.QMainWindow):
             if hasattr(self, "act_layout_v"):
                 self.act_layout_v.setChecked(False)
 
-        self.canvas_splitter.setSizes([1, 1])
+        if self.mode == "B" and getattr(self, "window_count", 2) == 1:
+            show_left = (getattr(self, "single_view_side", "L") == "L")
+            self.left_view.setVisible(show_left)
+            self.right_view.setVisible(not show_left)
+        else:
+            self.canvas_splitter.setSizes([1, 1])
 
         if hasattr(self, "sidebar") and hasattr(self.sidebar, "set_layout_orientation"):
             self.sidebar.set_layout_orientation(orientation)
@@ -688,6 +765,103 @@ class MainWindow(QtWidgets.QMainWindow):
         self.set_layout_orientation(new_orient, save=True)
         tip = "上下排列" if new_orient == "vertical" else "左右排列"
         self.statusBar().showMessage(f"已切换图像排列方式为：{tip}", 2500)
+
+    # =========================================================================
+    # 窗口数量与单窗口侧别控制（模式 B）
+    # =========================================================================
+    def set_window_count(self, count, save=True):
+        """
+        设置图像窗口数量：
+        1: 单窗口独占全屏 (仅在模式 B 下有效)
+        2: 双窗口分屏对比 (模式 A 恒定为 2 窗口)
+        """
+        count = 1 if int(count or 2) == 1 else 2
+        self.window_count = count
+
+        if self.mode == "B" and self.window_count == 1:
+            show_left = (self.single_view_side == "L")
+            self.left_view.setVisible(show_left)
+            self.right_view.setVisible(not show_left)
+            active_view = self.left_view if show_left else self.right_view
+            if active_view.is_loaded() and getattr(active_view, "_fit_mode", False):
+                active_view.fit(emit=False)
+            if hasattr(self, "sidebar") and hasattr(self.sidebar, "set_active_side"):
+                self.sidebar.set_active_side(self.single_view_side)
+        else:
+            self.left_view.setVisible(True)
+            self.right_view.setVisible(True)
+            self.canvas_splitter.setSizes([1, 1])
+            if self.left_view.is_loaded() and getattr(self.left_view, "_fit_mode", False):
+                self.left_view.fit(emit=False)
+            if self.right_view.is_loaded() and getattr(self.right_view, "_fit_mode", False):
+                self.right_view.fit(emit=False)
+
+        self._update_window_controls_state()
+        self._show_current()
+
+        if save:
+            self._save_config()
+
+    def set_single_view_side(self, side, save=True):
+        """
+        设置单窗口模式下显示的侧别：'L' 或 'R'
+        """
+        side = "R" if str(side or "L").upper() == "R" else "L"
+        self.single_view_side = side
+
+        if self.mode == "B" and self.window_count == 1:
+            show_left = (self.single_view_side == "L")
+            self.left_view.setVisible(show_left)
+            self.right_view.setVisible(not show_left)
+            active_view = self.left_view if show_left else self.right_view
+            if active_view.is_loaded() and getattr(active_view, "_fit_mode", False):
+                active_view.fit(emit=False)
+            if hasattr(self, "sidebar") and hasattr(self.sidebar, "set_active_side"):
+                self.sidebar.set_active_side(self.single_view_side)
+
+        self._update_window_controls_state()
+        self._show_current()
+
+        if save:
+            self._save_config()
+
+    def _toggle_single_view_side(self):
+        """快捷切换单窗口显示的侧别 (Alt+S)"""
+        new_side = "R" if self.single_view_side == "L" else "L"
+        self.set_single_view_side(new_side, save=True)
+        tip = "右侧" if new_side == "R" else "左侧"
+        self.statusBar().showMessage(f"已切换单窗口显示为：{tip}图像", 2500)
+
+    def _update_window_controls_state(self):
+        """刷新窗口数量与单窗口侧别控制按钮与菜单项的状态"""
+        is_mode_b = (self.mode == "B")
+        is_single = (self.window_count == 1 and is_mode_b)
+
+        if hasattr(self, "btn_win_1"):
+            self.btn_win_1.setEnabled(is_mode_b)
+            self.btn_win_1.setChecked(is_single)
+        if hasattr(self, "btn_win_2"):
+            self.btn_win_2.setEnabled(is_mode_b)
+            self.btn_win_2.setChecked(not is_single)
+
+        if hasattr(self, "btn_single_side"):
+            self.btn_single_side.setVisible(is_single)
+            if is_single:
+                if self.single_view_side == "L":
+                    self.btn_single_side.setText("🟦 左 ⇄")
+                    self.btn_single_side.setToolTip("当前全屏展示左侧图集。点击对调展示右侧图集 (Alt+S)")
+                else:
+                    self.btn_single_side.setText("🟩 右 ⇄")
+                    self.btn_single_side.setToolTip("当前全屏展示右侧图集。点击对调展示左侧图集 (Alt+S)")
+
+        if hasattr(self, "act_win_1"):
+            self.act_win_1.setEnabled(is_mode_b)
+            self.act_win_1.setChecked(is_single)
+        if hasattr(self, "act_win_2"):
+            self.act_win_2.setEnabled(is_mode_b)
+            self.act_win_2.setChecked(not is_single)
+        if hasattr(self, "act_switch_side"):
+            self.act_switch_side.setEnabled(is_single)
 
     def _toggle_sidebar(self):
         self._show_sidebar = not self._show_sidebar
@@ -982,7 +1156,10 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.mode == "A":
             self._turn_pair(delta)
         else:
-            target = self._hover_side() or "R"
+            if getattr(self, "window_count", 2) == 1:
+                target = getattr(self, "single_view_side", "L")
+            else:
+                target = self._hover_side() or "R"
             self._turn_side(target, delta)
 
     def _turn_pair(self, delta):
@@ -1014,10 +1191,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self._save_config()
         elif row_type == "L":
             self.left_index = raw_idx
+            if self.mode == "B" and getattr(self, "window_count", 2) == 1 and self.single_view_side != "L":
+                self.set_single_view_side("L", save=True)
             self._show_current()
             self._save_config()
         elif row_type == "R":
             self.right_index = raw_idx
+            if self.mode == "B" and getattr(self, "window_count", 2) == 1 and self.single_view_side != "R":
+                self.set_single_view_side("R", save=True)
             self._show_current()
             self._save_config()
         elif row_type == "UNMATCHED_L":
@@ -1032,6 +1213,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.right_view.load_path(p)
                 self.right_view.set_image_title(p.name, str(p))
                 self._update_status()
+
+    def _on_sidebar_side_changed(self, side):
+        if self.mode == "B" and getattr(self, "window_count", 2) == 1:
+            if self.single_view_side != side:
+                self.set_single_view_side(side, save=True)
 
     # ---- 视口变换与联动 ----
     def _on_link_toggled(self, checked):
@@ -1061,17 +1247,28 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_status()
 
     def _fit_both(self):
-        self.left_view.fit(emit=False)
-        self.right_view.fit(emit=False)
+        if self.mode == "B" and getattr(self, "window_count", 2) == 1:
+            active_view = self.left_view if self.single_view_side == "L" else self.right_view
+            active_view.fit(emit=False)
+        else:
+            self.left_view.fit(emit=False)
+            self.right_view.fit(emit=False)
         self._update_status()
 
     def _one_to_one_both(self):
-        self.left_view.set_one_to_one(emit=False)
-        self.right_view.set_one_to_one(emit=False)
+        if self.mode == "B" and getattr(self, "window_count", 2) == 1:
+            active_view = self.left_view if self.single_view_side == "L" else self.right_view
+            active_view.set_one_to_one(emit=False)
+        else:
+            self.left_view.set_one_to_one(emit=False)
+            self.right_view.set_one_to_one(emit=False)
         self._update_status()
 
     def _zoom_both(self, factor):
-        if self.chk_link.isChecked():
+        if self.mode == "B" and getattr(self, "window_count", 2) == 1:
+            active_view = self.left_view if self.single_view_side == "L" else self.right_view
+            active_view.zoom_by(factor)
+        elif self.chk_link.isChecked():
             self.left_view.zoom_by(factor)
         else:
             self.left_view.zoom_by(factor)
@@ -1108,6 +1305,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self.act_mode_a.setChecked(mode == "A")
         if hasattr(self, "act_mode_b"):
             self.act_mode_b.setChecked(mode == "B")
+        if self.mode == "B":
+            self.set_window_count(self.window_count, save=False)
+            self.set_single_view_side(self.single_view_side, save=False)
+        else:
+            self.left_view.setVisible(True)
+            self.right_view.setVisible(True)
+            self.canvas_splitter.setSizes([1, 1])
+            self._update_window_controls_state()
         self._refresh_all()
         self._save_config()
 
@@ -1257,11 +1462,22 @@ class MainWindow(QtWidgets.QMainWindow):
             self.right_view.load_path(right_path)
             self.left_view.set_image_title(left_path.name if left_path else "", str(left_path) if left_path else "")
             self.right_view.set_image_title(right_path.name if right_path else "", str(right_path) if right_path else "")
-            self.sidebar.select_row("L", self.left_index if self.left_files else -1)
-            self.lbl_pos.setText("左 %d/%d ｜ 右 %d/%d" % (
-                self.left_index + 1 if self.left_files else 0, len(self.left_files),
-                self.right_index + 1 if self.right_files else 0, len(self.right_files)
-            ))
+            if getattr(self, "window_count", 2) == 1:
+                cur_side = getattr(self, "single_view_side", "L")
+                if cur_side == "L":
+                    self.sidebar.select_row("L", self.left_index if self.left_files else -1)
+                    total_l = len(self.left_files)
+                    self.lbl_pos.setText("左 %d / %d" % (self.left_index + 1 if total_l else 0, total_l))
+                else:
+                    self.sidebar.select_row("R", self.right_index if self.right_files else -1)
+                    total_r = len(self.right_files)
+                    self.lbl_pos.setText("右 %d / %d" % (self.right_index + 1 if total_r else 0, total_r))
+            else:
+                self.sidebar.select_row("L", self.left_index if self.left_files else -1)
+                self.lbl_pos.setText("左 %d/%d ｜ 右 %d/%d" % (
+                    self.left_index + 1 if self.left_files else 0, len(self.left_files),
+                    self.right_index + 1 if self.right_files else 0, len(self.right_files)
+                ))
         self._update_status()
 
     def _update_status(self):
@@ -1276,11 +1492,22 @@ class MainWindow(QtWidgets.QMainWindow):
                 parts.append("未匹配 左%d / 右%d" % (len(self.unmatched_l), len(self.unmatched_r)))
             else:
                 parts.append("未设置配对规则，请点「规则」进行配置")
+            parts.append("左：" + self.left_view.info_text())
+            parts.append("右：" + self.right_view.info_text())
         else:
-            parts.append("左 %d/%d" % (self.left_index + 1 if self.left_files else 0, len(self.left_files)))
-            parts.append("右 %d/%d" % (self.right_index + 1 if self.right_files else 0, len(self.right_files)))
-        parts.append("左：" + self.left_view.info_text())
-        parts.append("右：" + self.right_view.info_text())
+            if getattr(self, "window_count", 2) == 1:
+                cur_side = getattr(self, "single_view_side", "L")
+                if cur_side == "L":
+                    parts.append("单窗口 [左] %d/%d" % (self.left_index + 1 if self.left_files else 0, len(self.left_files)))
+                    parts.append("左：" + self.left_view.info_text())
+                else:
+                    parts.append("单窗口 [右] %d/%d" % (self.right_index + 1 if self.right_files else 0, len(self.right_files)))
+                    parts.append("右：" + self.right_view.info_text())
+            else:
+                parts.append("左 %d/%d" % (self.left_index + 1 if self.left_files else 0, len(self.left_files)))
+                parts.append("右 %d/%d" % (self.right_index + 1 if self.right_files else 0, len(self.right_files)))
+                parts.append("左：" + self.left_view.info_text())
+                parts.append("右：" + self.right_view.info_text())
         self.lbl_status.setText("   ｜   ".join(parts))
 
 

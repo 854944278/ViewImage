@@ -32,6 +32,8 @@ class ConfigManager:
             "right_index": 0,
             "show_file_list": True,
             "layout_orientation": "horizontal",
+            "window_count": 2,
+            "single_view_side": "L",
         }
         if not os.path.isfile(self.config_path):
             return defaults
@@ -56,6 +58,8 @@ class ConfigManager:
                     data[idx_key] = 0
             data["link_views"] = bool(data.get("link_views", True))
             data["show_file_list"] = bool(data.get("show_file_list", True))
+            data["window_count"] = 1 if int(data.get("window_count", 2) or 2) == 1 else 2
+            data["single_view_side"] = "R" if str(data.get("single_view_side", "L") or "L").upper() == "R" else "L"
             return data
         except Exception:
             return defaults
@@ -75,6 +79,8 @@ class ConfigManager:
                 "right_index": int(data.get("right_index", 0) or 0),
                 "show_file_list": bool(data.get("show_file_list", True)),
                 "layout_orientation": "vertical" if data.get("layout_orientation") == "vertical" else "horizontal",
+                "window_count": 1 if int(data.get("window_count", 2) or 2) == 1 else 2,
+                "single_view_side": "R" if str(data.get("single_view_side", "L") or "L").upper() == "R" else "L",
             }
             tmp_path = self.config_path + ".tmp"
             with open(tmp_path, "w", encoding="utf-8") as f:

@@ -715,6 +715,80 @@ class TestGUIAndFunctionality(unittest.TestCase):
         self.assertTrue(any("调色" in t for t in btn_texts))
         self.assertTrue(any("列表" in t for t in btn_texts))
 
+    def test_mode_b_window_count_and_single_view(self):
+        """测试模式 B 单/双窗口控制、单窗口侧别切换、翻页联动与持久化"""
+        win = MainWindow(config_path=self.cfg_path)
+        win.edt_left.setText(self.dir_l)
+        win.edt_right.setText(self.dir_r)
+        win.edt_output.setText(self.dir_out)
+        win.mode = "B"
+        win._on_dirs_changed()
+
+        # 1. 初始双窗口状态
+        self.assertEqual(win.window_count, 2)
+        self.assertTrue(win.btn_win_2.isChecked())
+        self.assertFalse(win.btn_win_1.isChecked())
+        self.assertTrue(win.btn_single_side.isHidden())
+        self.assertFalse(win.left_view.isHidden())
+        self.assertFalse(win.right_view.isHidden())
+
+        # 2. 切换为单窗口独占模式 (默认左侧)
+        win.set_window_count(1)
+        self.assertEqual(win.window_count, 1)
+        self.assertTrue(win.btn_win_1.isChecked())
+        self.assertFalse(win.btn_win_2.isChecked())
+        self.assertFalse(win.btn_single_side.isHidden())
+        self.assertEqual(win.single_view_side, "L")
+        self.assertFalse(win.left_view.isHidden())
+        self.assertTrue(win.right_view.isHidden())
+        self.assertIn("左", win.btn_single_side.text())
+        self.assertIn("左", win.lbl_pos.text())
+
+        # 3. 切换单窗口侧别到右侧 (Alt+S)
+        win._toggle_single_view_side()
+        self.assertEqual(win.single_view_side, "R")
+        self.assertTrue(win.left_view.isHidden())
+        self.assertFalse(win.right_view.isHidden())
+        self.assertIn("右", win.btn_single_side.text())
+        self.assertIn("右", win.lbl_pos.text())
+
+        # 4. 单窗口模式下的全局翻页器只对当前激活侧生效
+        self.assertEqual(win.right_index, 0)
+        win._turn_global(1)
+        self.assertEqual(win.right_index, 1)
+        self.assertEqual(win.left_index, 0)  # 左侧未受影响
+
+        # 5. 侧边栏选项卡联动 (在侧边栏点“左列表”，自动将单窗口切到左侧)
+        win.sidebar.sideChanged.emit("L")
+        self.assertEqual(win.single_view_side, "L")
+        self.assertFalse(win.left_view.isHidden())
+        self.assertTrue(win.right_view.isHidden())
+
+        # 6. 切换到模式 A 时，窗口控制禁用且强制恢复双窗口
+        win._on_mode_clicked("A")
+        self.assertEqual(win.mode, "A")
+        self.assertFalse(win.btn_win_1.isEnabled())
+        self.assertFalse(win.btn_win_2.isEnabled())
+        self.assertTrue(win.btn_single_side.isHidden())
+        self.assertFalse(win.left_view.isHidden())
+        self.assertFalse(win.right_view.isHidden())
+
+        # 7. 切回模式 B 时恢复单窗口状态
+        win._on_mode_clicked("B")
+        self.assertEqual(win.mode, "B")
+        self.assertEqual(win.window_count, 1)
+        self.assertFalse(win.left_view.isHidden())
+        self.assertTrue(win.right_view.isHidden())
+
+        # 8. 持久化验证
+        win.set_single_view_side("R")
+        win2 = MainWindow(config_path=self.cfg_path)
+        self.assertEqual(win2.mode, "B")
+        self.assertEqual(win2.window_count, 1)
+        self.assertEqual(win2.single_view_side, "R")
+        self.assertTrue(win2.left_view.isHidden())
+        self.assertFalse(win2.right_view.isHidden())
+
 
 if __name__ == "__main__":
     unittest.main()
