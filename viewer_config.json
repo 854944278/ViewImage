@@ -5,9 +5,11 @@
   "mode": "A",
   "rule_text": "prefix:37",
   "link_views": true,
-  "pair_index": 7,
-  "left_index": 2,
+  "pair_index": 0,
+  "left_index": 0,
   "right_index": 2,
   "show_file_list": true,
-  "layout_orientation": "vertical"
+  "layout_orientation": "vertical",
+  "window_count": 1,
+  "single_view_side": "L"
 }
