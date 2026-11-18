@@ -78,6 +78,7 @@ CHECK_STATE_CHECKED = _qt_const("CheckState.Checked", "Checked")
 CHECK_STATE_UNCHECKED = _qt_const("CheckState.Unchecked", "Unchecked")
 
 ELIDE_MIDDLE = _qt_const("TextElideMode.ElideMiddle", "ElideMiddle")
+WA_TRANSPARENT_FOR_MOUSE = _qt_const("WidgetAttribute.WA_TransparentForMouseEvents", "WA_TransparentForMouseEvents")
 
 # QShortcut 在 Qt5 属于 QtWidgets，Qt6 移到了 QtGui
 QShortcut = getattr(QtWidgets, "QShortcut", None) or QtGui.QShortcut

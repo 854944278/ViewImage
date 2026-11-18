@@ -789,6 +789,43 @@ class TestGUIAndFunctionality(unittest.TestCase):
         self.assertTrue(win2.left_view.isHidden())
         self.assertFalse(win2.right_view.isHidden())
 
+    def test_no_image_hover_tooltip_and_copy_cut_toast(self):
+        """测试图像视口悬停不显示文件名 ToolTip，且右键拷贝/剪切后弹出成功提示 Toast"""
+        win = MainWindow(config_path=self.cfg_path)
+        win.edt_left.setText(self.dir_l)
+        win.edt_right.setText(self.dir_r)
+        win.edt_output.setText(self.dir_out)
+        win.rule_text = "prefix:7"
+        win.mode = "A"
+        win._on_dirs_changed()
+
+        # 1. 鼠标在图像上不再弹出图像名称/路径 ToolTip
+        self.assertEqual(win.left_view.toolTip(), "")
+        self.assertEqual(win.right_view.toolTip(), "")
+        win.left_view.set_image_title("demo.png", "/tmp/demo.png")
+        self.assertEqual(win.left_view.toolTip(), "")
+        win._show_current()
+
+        # 2. 触发图像右键拷贝请求信号后，出现成功提示 Toast
+        win.left_view.copyRequested.emit()
+        self.assertIn("item_01_L.png", os.listdir(self.dir_out))
+        self.assertFalse(win._toast_label.isHidden())
+        self.assertIn("已拷贝成功", win._toast_label.text())
+        self.assertIn("item_01_L.png", win._toast_label.text())
+        self.assertTrue(win._toast_timer.isActive())
+
+        # 3. 触发图像右键剪切请求信号后，文件移动成功且出现成功提示 Toast
+        win.right_view.cutRequested.emit()
+        self.assertIn("item_01_R.png", os.listdir(self.dir_out))
+        self.assertFalse(os.path.exists(os.path.join(self.dir_r, "item_01_R.png")))
+        self.assertFalse(win._toast_label.isHidden())
+        self.assertIn("已剪切成功", win._toast_label.text())
+        self.assertIn("item_01_R.png", win._toast_label.text())
+        self.assertTrue(win._toast_timer.isActive())
+
+        win.close()
+        self.assertFalse(win._toast_timer.isActive())
+
 
 if __name__ == "__main__":
     unittest.main()

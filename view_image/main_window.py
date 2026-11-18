@@ -27,6 +27,7 @@ from .core.qt_compat import (
     ALIGN_CENTER,
     DIALOG_ACCEPTED,
     TOOLBUTTON_MENU_BUTTON_POPUP,
+    WA_TRANSPARENT_FOR_MOUSE,
     QColor,
     QShortcut,
     QAction,
@@ -360,6 +361,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.edt_output.editingFinished.connect(self._save_config)
 
         self._build_shortcuts()
+
+        # ---------------- 5. 悬浮操作结果提示 Toast ----------------
+        self._toast_label = QtWidgets.QLabel(self)
+        self._toast_label.setObjectName("ToastBanner")
+        self._toast_label.setAlignment(ALIGN_CENTER)
+        self._toast_label.setWordWrap(True)
+        self._toast_label.setAttribute(WA_TRANSPARENT_FOR_MOUSE, True)
+        self._toast_label.hide()
+        self._toast_timer = QtCore.QTimer(self)
+        self._toast_timer.setSingleShot(True)
+        self._toast_timer.timeout.connect(self._toast_label.hide)
 
     def _build_menu_bar(self):
         menu_bar = self.menuBar()
@@ -899,6 +911,68 @@ class MainWindow(QtWidgets.QMainWindow):
         if target in ("BOTH", "R"):
             self.right_view.reset_display()
 
+    # ---- 悬浮操作结果提示 Toast ----
+    def _position_toast(self):
+        if not hasattr(self, "_toast_label"):
+            return
+        max_w = max(260, self.width() - 48)
+        self._toast_label.setMaximumWidth(max_w)
+        self._toast_label.adjustSize()
+        if hasattr(self, "canvas_splitter") and self.canvas_splitter.isVisible() and self.canvas_splitter.width() > 0:
+            top_left = self.canvas_splitter.mapTo(self, QtCore.QPoint(0, 0))
+            cx = top_left.x() + (self.canvas_splitter.width() - self._toast_label.width()) // 2
+            y = top_left.y() + 18
+        else:
+            cx = (self.width() - self._toast_label.width()) // 2
+            y = 64
+        x = max(12, min(cx, self.width() - self._toast_label.width() - 12))
+        self._toast_label.move(x, y)
+
+    def _show_toast(self, message, duration_ms=2500, level="success"):
+        """在画板上方显示非阻塞悬浮提示条，不打断操作并自动消失。"""
+        if not hasattr(self, "_toast_label"):
+            return
+        if level == "success":
+            style = (
+                "QLabel#ToastBanner {"
+                "background-color: rgba(6, 78, 59, 238);"
+                "color: #ecfdf5;"
+                "border: 1px solid #10b981;"
+                "border-radius: 8px;"
+                "padding: 8px 18px;"
+                "font-size: 13px;"
+                "font-weight: 600;"
+                "}"
+            )
+        else:
+            style = (
+                "QLabel#ToastBanner {"
+                "background-color: rgba(30, 41, 59, 238);"
+                "color: #e2e8f0;"
+                "border: 1px solid #475569;"
+                "border-radius: 8px;"
+                "padding: 8px 18px;"
+                "font-size: 13px;"
+                "font-weight: 600;"
+                "}"
+            )
+        self._toast_label.setStyleSheet(style)
+        self._toast_label.setText(message)
+        self._position_toast()
+        self._toast_label.show()
+        self._toast_label.raise_()
+        self._toast_timer.start(duration_ms)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "_toast_label") and self._toast_label.isVisible():
+            self._position_toast()
+
+    def closeEvent(self, event):
+        if hasattr(self, "_toast_timer"):
+            self._toast_timer.stop()
+        super().closeEvent(event)
+
     # ---- 拷贝与剪切（含重复文件提醒与处理） ----
     def _validate_output_dir(self):
         out_dir = self.edt_output.text().strip()
@@ -934,8 +1008,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         try:
             status, target = copy_file_safe(source, out_dir, policy=policy)
-            msg = "已拷贝至：%s" % target if status != "skipped" else "已跳过：%s" % filename
-            self.statusBar().showMessage(msg, 3500)
+            if status != "skipped":
+                dest_name = os.path.basename(target)
+                self.statusBar().showMessage("已拷贝至：%s" % target, 3500)
+                self._show_toast("✓ 已拷贝成功（已复制至输出目录）：%s" % dest_name, level="success")
+            else:
+                self.statusBar().showMessage("已跳过：%s" % filename, 3500)
+                self._show_toast("已跳过拷贝：%s" % filename, level="info")
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "拷贝失败", str(exc))
 
@@ -965,10 +1044,13 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             status, target = move_file_safe(source, out_dir, policy=policy)
             if status != "skipped":
+                dest_name = os.path.basename(target)
                 self.statusBar().showMessage("已剪切至：%s（自动跳转下一张）" % target, 3500)
                 self._refresh_all_after_removal()
+                self._show_toast("✓ 已剪切成功（已移动至输出目录）：%s" % dest_name, level="success")
             else:
                 self.statusBar().showMessage("已跳过剪切：%s" % filename, 3500)
+                self._show_toast("已跳过剪切：%s" % filename, level="info")
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self, "剪切失败", str(exc))
 

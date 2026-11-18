@@ -95,7 +95,7 @@ class ImageView(QtWidgets.QWidget):
     def set_image_title(self, filename, full_path=""):
         self._display_filename = filename or ""
         self._display_fullpath = full_path or ""
-        self.setToolTip(self._display_fullpath if self._display_fullpath else self._display_filename)
+        self.setToolTip("")
         self.update()
 
     # ---- 外部交互接口 ----
