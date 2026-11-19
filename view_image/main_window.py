@@ -297,6 +297,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sidebar.batchCopyRequested.connect(self._batch_copy)
         self.sidebar.batchCutRequested.connect(self._batch_cut)
         self.sidebar.closeRequested.connect(self._toggle_sidebar)
+        self.sidebar.checkedChanged.connect(self._save_config)
         self.main_splitter.addWidget(self.sidebar)
 
         # 右侧双栏沉浸式画板
@@ -638,6 +639,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self.right_view.setVisible(True)
             self.canvas_splitter.setSizes([1, 1])
             self._update_window_controls_state()
+        # 界面设置完成后载入勾选记录，再由启动扫描匹配当前仍存在的文件。
+        self.sidebar.set_checked_paths(data.get("checked_paths", []))
         self._loading = False
         self._update_path_button_tooltip()
 
@@ -658,6 +661,8 @@ class MainWindow(QtWidgets.QMainWindow):
             "layout_orientation": getattr(self, "layout_orientation", "horizontal"),
             "window_count": getattr(self, "window_count", 2),
             "single_view_side": getattr(self, "single_view_side", "L"),
+            # 保存双侧全部勾选，避免搜索过滤或批量操作范围导致漏存。
+            "checked_paths": [str(p) for p in self.sidebar.get_checked_paths(scope="ALL")],
         }
         self.config_manager.save(data)
         self._update_path_button_tooltip()
@@ -969,6 +974,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._position_toast()
 
     def closeEvent(self, event):
+        # 退出前再保存一次，确保最后的勾选及刷新后的有效记录写入配置。
+        self._save_config()
         if hasattr(self, "_toast_timer"):
             self._toast_timer.stop()
         super().closeEvent(event)
@@ -1627,8 +1634,19 @@ def setup_exception_hook():
 def main():
     _enable_high_dpi()
     setup_exception_hook()
+    if sys.platform == "win32":
+        # 在创建窗口前设置独立任务栏标识，让 Windows 使用本程序的图标分组。
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("ViewImage.DualImageViewer")
+        except (ImportError, OSError):
+            # 标识只影响任务栏分组，缺少可选 DLL 时继续加载窗口和自定义图标。
+            pass
     app = QtWidgets.QApplication(sys.argv)
     app.setApplicationName("DualImageView")
+    # 图标按模块位置定位，兼容源码启动及 PyInstaller 打包后的资源目录。
+    icon_path = Path(__file__).resolve().parent.parent / "image" / "ViewImage.ico"
+    app.setWindowIcon(QtGui.QIcon(str(icon_path)))
     app.setStyleSheet(DARK_THEME_QSS)
     window = MainWindow()
     window.show()

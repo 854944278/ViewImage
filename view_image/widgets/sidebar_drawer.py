@@ -27,6 +27,7 @@ class SidebarDrawer(QtWidgets.QFrame):
     batchCutRequested = pyqtSignal(list)     # [Path, ...]
     sideChanged = pyqtSignal(str)            # "L" | "R" (模式 B 切换选项卡)
     closeRequested = pyqtSignal()
+    checkedChanged = pyqtSignal()           # 用户修改勾选后通知主窗口保存配置
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -145,7 +146,7 @@ class SidebarDrawer(QtWidgets.QFrame):
 
         self._all_display_items = []  # [(display_text, [Path1, Path2], row_type, raw_index), ...]
         self._filtered_indices = []
-        self._checked_paths = set()   # 跨搜索记忆已勾选的文件绝对路径
+        self._checked_paths = set()   # 跨搜索、选项卡及重启记忆已勾选的文件路径
 
     def set_data(self, mode, rule_text, pairs, unmatched_l, unmatched_r, left_files, right_files):
         """更新文件与配对数据并刷新展示"""
@@ -188,8 +189,8 @@ class SidebarDrawer(QtWidgets.QFrame):
                 for idx, path in enumerate(self._right_files):
                     self._all_display_items.append(("%03d. %s" % (idx + 1, path.name), [path], "R", idx))
 
-        # 清理失效的已勾选路径
-        all_paths = {str(p) for _, paths, _, _ in self._all_display_items for p in paths}
+        # 按双侧完整文件列表清理失效路径，切换选项卡时保留另一侧的勾选。
+        all_paths = {str(p) for p in self._left_files + self._right_files}
         self._checked_paths.intersection_update(all_paths)
 
     def _on_tab_changed(self, idx):
@@ -222,7 +223,7 @@ class SidebarDrawer(QtWidgets.QFrame):
             item = QtWidgets.QListWidgetItem(display_text)
             item.setFlags(item.flags() | ITEM_IS_USER_CHECKABLE)
 
-            # 判断当前项是否已勾选 (若包含的路径均在 _checked_paths 中则置为 checked)
+            # 配对行只要包含已勾选路径，就显示为勾选状态。
             is_checked = any(str(p) in self._checked_paths for p in paths)
             item.setCheckState(CHECK_STATE_CHECKED if is_checked else CHECK_STATE_UNCHECKED)
 
@@ -245,6 +246,7 @@ class SidebarDrawer(QtWidgets.QFrame):
                 for p in paths:
                     self._checked_paths.discard(str(p))
             self._update_checked_label()
+            self.checkedChanged.emit()
 
     def _update_scope_combobox_items(self, orientation):
         self._layout_orientation = orientation
@@ -299,6 +301,7 @@ class SidebarDrawer(QtWidgets.QFrame):
                     self._checked_paths.add(str(p))
         widget.blockSignals(False)
         self._update_checked_label()
+        self.checkedChanged.emit()
 
     def unselect_all(self):
         widget = self.list_widget
@@ -310,6 +313,7 @@ class SidebarDrawer(QtWidgets.QFrame):
         self._checked_paths.clear()
         widget.blockSignals(False)
         self._update_checked_label()
+        self.checkedChanged.emit()
 
     def invert_selection(self):
         widget = self.list_widget
@@ -332,6 +336,12 @@ class SidebarDrawer(QtWidgets.QFrame):
                         self._checked_paths.add(str(p))
         widget.blockSignals(False)
         self._update_checked_label()
+        self.checkedChanged.emit()
+
+    def set_checked_paths(self, paths):
+        """从配置恢复勾选，失效路径由后续文件扫描刷新统一清理。"""
+        self._checked_paths = {str(p) for p in paths}
+        self._apply_filter(self.edt_filter.text())
 
     def get_checked_paths(self, scope=None):
         """

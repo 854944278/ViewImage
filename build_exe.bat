@@ -56,7 +56,8 @@ if errorlevel 1 (
 )
 
 echo [1/3] Building...
-"%PY_EXE%" -m PyInstaller --noconfirm --clean --windowed --onedir --name ViewImage --paths "." --icon "image\ViewImage.ico" --hidden-import PyQt5.sip --distpath "dist" --workpath "build" --specpath . dual_image_viewer.py
+REM 统一使用 spec 中的图标资源和 Conda DLL 配置，避免每次打包覆盖 spec。
+"%PY_EXE%" -m PyInstaller --noconfirm --clean --distpath "dist" --workpath "build" ViewImage.spec
 if errorlevel 1 (
   echo [ERROR] PyInstaller failed. See output above.
   goto :fail
@@ -75,7 +76,7 @@ echo [3/3] Done.
 :done
 echo Output: %OUTDIR%\ViewImage.exe
 echo NOTE: config location after packaging is INFERRED, not tested. Verify save/load once.
-echo NOTE: change --windowed to --console if you need runtime errors.
+echo NOTE: set console=True in ViewImage.spec if you need runtime errors.
 pause
 exit /b 0
 

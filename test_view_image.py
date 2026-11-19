@@ -4,6 +4,7 @@ ViewImage 全面自动化测试套件
 涵盖：Qt 兼容层、规则引擎、扫描器、配置读写、滤镜变换、面板及主窗口功能一致性验证
 """
 
+import json
 import os
 import shutil
 import tempfile
@@ -14,6 +15,7 @@ from pathlib import Path
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 import dual_image_viewer
+from view_image import main_window as main_window_module
 from dual_image_viewer import (
     ConfigManager,
     ImageView,
@@ -33,9 +35,34 @@ from dual_image_viewer import (
     natural_key,
     scan_images,
 )
-from view_image.core.qt_compat import DIALOG_ACCEPTED, DIALOG_REJECTED, QtGui, QtWidgets
+from view_image.core.qt_compat import (
+    CHECK_STATE_CHECKED, CHECK_STATE_UNCHECKED,
+    DIALOG_ACCEPTED, DIALOG_REJECTED, QtGui, QtWidgets,
+)
 from view_image.widgets.path_dialog import PathSettingsDialog
 from unittest.mock import patch
+
+
+class TestApplicationStartup(unittest.TestCase):
+    def test_startup_continues_when_ctypes_dll_is_missing(self):
+        """缺少 ctypes 依赖时，任务栏标识设置不应阻止窗口和图标初始化。"""
+        # 模拟打包后导入 ctypes 失败，隔离真实应用和窗口避免影响测试进程。
+        with patch.dict("sys.modules", {"ctypes": None}), \
+                patch.object(main_window_module.sys, "platform", "win32"), \
+                patch.object(main_window_module, "_enable_high_dpi"), \
+                patch.object(main_window_module, "setup_exception_hook"), \
+                patch.object(main_window_module.QtGui, "QIcon"), \
+                patch.object(main_window_module.QtWidgets, "QApplication") as app_class, \
+                patch.object(main_window_module, "MainWindow") as window_class:
+            app_class.return_value.exec.return_value = 0
+            with self.assertRaises(SystemExit) as result:
+                main_window_module.main()
+
+            # 即便任务栏标识不可用，仍应设置图标、显示窗口并正常进入事件循环。
+            self.assertEqual(result.exception.code, 0)
+            app_class.return_value.setWindowIcon.assert_called_once()
+            window_class.return_value.show.assert_called_once()
+            app_class.return_value.exec.assert_called_once()
 
 
 class TestScannerAndSorting(unittest.TestCase):
@@ -151,6 +178,7 @@ class TestConfigManager(unittest.TestCase):
             self.assertEqual(cfg["mode"], "A")
             self.assertTrue(cfg["link_views"])
             self.assertEqual(cfg["layout_orientation"], "horizontal")
+            self.assertEqual(cfg["checked_paths"], [])
 
             # 修改并保存
             cfg["left_dir"] = "/path/left"
@@ -158,6 +186,7 @@ class TestConfigManager(unittest.TestCase):
             cfg["mode"] = "B"
             cfg["pair_index"] = 42
             cfg["layout_orientation"] = "vertical"
+            cfg["checked_paths"] = ["D:/图像/样本02.png", "D:/图像/样本01.png"]
             mgr.save(cfg)
 
             # 再次加载验证
@@ -167,6 +196,32 @@ class TestConfigManager(unittest.TestCase):
             self.assertEqual(loaded["mode"], "B")
             self.assertEqual(loaded["pair_index"], 42)
             self.assertEqual(loaded["layout_orientation"], "vertical")
+            self.assertEqual(loaded["checked_paths"], sorted(cfg["checked_paths"]))
+
+    def test_checked_paths_config_validation_and_legacy_defaults(self):
+        """勾选字段兼容旧配置，格式异常时不影响其他设置。"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cfg_file = os.path.join(tmpdir, "test_config.json")
+            mgr = ConfigManager(cfg_file)
+            cases = [
+                ({"mode": "B"}, []),
+                ({"mode": "B", "checked_paths": None}, []),
+                ({"mode": "B", "checked_paths": "invalid"}, []),
+                ({"mode": "B", "checked_paths": {"path": "a.png"}}, []),
+                ({"mode": "B", "checked_paths": ["a.png", "", " ", None, 7, "a.png"]}, ["a.png"]),
+            ]
+            for payload, expected in cases:
+                with self.subTest(payload=payload):
+                    # 直接写入历史或异常配置，验证读取兼容性。
+                    with open(cfg_file, "w", encoding="utf-8") as f:
+                        json.dump(payload, f, ensure_ascii=False)
+                    loaded = mgr.load()
+                    self.assertEqual(loaded["mode"], "B")
+                    self.assertEqual(loaded["checked_paths"], expected)
+
+                    # 保存时也应过滤无效字段及重复路径。
+                    self.assertTrue(mgr.save(payload))
+                    self.assertEqual(mgr.load()["checked_paths"], expected)
 
 
 class TestGUIAndFunctionality(unittest.TestCase):
@@ -404,6 +459,97 @@ class TestGUIAndFunctionality(unittest.TestCase):
         # 针对冲突检测函数进行单元测试
         conflicts = check_conflicts([self.pairs_sample_file if hasattr(self, 'pairs_sample_file') else win.pairs[0][0]], self.dir_out)
         self.assertIsInstance(conflicts, list)
+
+    def test_checked_files_persist_after_restart(self):
+        """关闭重开后恢复配对勾选，搜索、操作范围及排序变化均不会漏存或错选。"""
+        win = MainWindow(config_path=self.cfg_path)
+        win.edt_left.setText(self.dir_l)
+        win.edt_right.setText(self.dir_r)
+        win.rule_text = "prefix:7"
+        win._on_dirs_changed()
+
+        # 单项勾选后过滤另一对并全选，搜索隐藏的勾选也必须保存。
+        win.sidebar.list_widget.item(0).setCheckState(CHECK_STATE_CHECKED)
+        win.sidebar.edt_filter.setText("item_03")
+        win.sidebar.select_all()
+        expected = {str(p) for idx in (0, 2) for p in win.pairs[idx]}
+        win.sidebar.cmb_scope.setCurrentIndex(win.sidebar.cmb_scope.findData("L"))
+        self.assertEqual(len(win.sidebar.get_checked_paths()), 2)
+        self.assertEqual(set(win.config_manager.load()["checked_paths"]), expected)
+        win.close()
+
+        # 插入排在最前的图片，确保重启按路径恢复而非按旧行号恢复。
+        for folder, side in ((self.dir_l, "L"), (self.dir_r, "R")):
+            shutil.copyfile(
+                os.path.join(folder, f"item_01_{side}.png"),
+                os.path.join(folder, f"item_00_{side}.png"),
+            )
+        restored = MainWindow(config_path=self.cfg_path)
+        self.assertEqual({str(p) for p in restored.sidebar.get_checked_paths(scope="ALL")}, expected)
+        for idx, (left, _) in enumerate(restored.pairs):
+            state = CHECK_STATE_CHECKED if str(left) in expected else CHECK_STATE_UNCHECKED
+            self.assertEqual(restored.sidebar.list_widget.item(idx).checkState(), state)
+        self.assertEqual(restored.sidebar.lbl_checked.text(), "已选: 4")
+        restored.close()
+
+    def test_mode_b_checked_files_survive_tabs_and_restart(self):
+        """独立模式双侧勾选跨选项卡、单窗口启动恢复，取消、反选及清空及时保存。"""
+        win = MainWindow(config_path=self.cfg_path)
+        win.edt_left.setText(self.dir_l)
+        win.edt_right.setText(self.dir_r)
+        win._on_mode_clicked("B")
+        win.sidebar.list_widget.item(1).setCheckState(CHECK_STATE_CHECKED)
+        left_path = str(win.left_files[1])
+        self.assertEqual(win.config_manager.load()["checked_paths"], [left_path])
+        win.sidebar.tab_mode_b.setCurrentIndex(1)
+        win.sidebar.list_widget.item(3).setCheckState(CHECK_STATE_CHECKED)
+        expected = {left_path, str(win.right_files[3])}
+        win.set_window_count(1)
+        win.set_single_view_side("R")
+        self.assertEqual(set(win.config_manager.load()["checked_paths"]), expected)
+        win.close()
+
+        # 单窗口启动会先设置侧别，不能因此清空尚未扫描恢复的勾选。
+        restored = MainWindow(config_path=self.cfg_path)
+        self.assertEqual(restored.single_view_side, "R")
+        self.assertEqual({str(p) for p in restored.sidebar.get_checked_paths(scope="ALL")}, expected)
+        self.assertEqual(restored.sidebar.list_widget.item(3).checkState(), CHECK_STATE_CHECKED)
+        restored.sidebar.tab_mode_b.setCurrentIndex(0)
+        self.assertEqual(restored.sidebar.list_widget.item(1).checkState(), CHECK_STATE_CHECKED)
+        restored.sidebar.list_widget.item(1).setCheckState(CHECK_STATE_UNCHECKED)
+        self.assertEqual(set(restored.config_manager.load()["checked_paths"]), expected - {left_path})
+
+        # 过滤后反选只恢复可见项，清空则同时移除隐藏和另一侧的勾选。
+        restored.sidebar.edt_filter.setText("item_02")
+        restored.sidebar.invert_selection()
+        self.assertEqual(set(restored.config_manager.load()["checked_paths"]), expected)
+        restored.sidebar.unselect_all()
+        self.assertEqual(restored.config_manager.load()["checked_paths"], [])
+        restored.close()
+        cleared = MainWindow(config_path=self.cfg_path)
+        self.assertEqual(cleared.sidebar.get_checked_paths(scope="ALL"), [])
+        cleared.close()
+
+    def test_missing_checked_files_are_removed_on_restart(self):
+        """已删除或移出目录的文件不再恢复，仍存在的勾选保持不变。"""
+        win = MainWindow(config_path=self.cfg_path)
+        win.edt_left.setText(self.dir_l)
+        win.edt_right.setText(self.dir_r)
+        win.rule_text = "prefix:7"
+        win._on_dirs_changed()
+        win.sidebar.select_all()
+        expected = {str(p) for p in win.sidebar.get_checked_paths(scope="ALL")}
+        deleted, moved = win.left_files[:2]
+        win.close()
+
+        # 模拟软件关闭期间文件被删除或移动，另一侧仍存在的文件继续保留。
+        deleted.unlink()
+        moved.rename(Path(self.tmpdir) / moved.name)
+        expected.difference_update((str(deleted), str(moved)))
+        restored = MainWindow(config_path=self.cfg_path)
+        self.assertEqual({str(p) for p in restored.sidebar.get_checked_paths(scope="ALL")}, expected)
+        restored.close()
+        self.assertEqual(set(ConfigManager(self.cfg_path).load()["checked_paths"]), expected)
 
     def test_conflict_policies(self):
         with tempfile.TemporaryDirectory() as tmpdir:

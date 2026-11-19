@@ -34,6 +34,7 @@ class ConfigManager:
             "layout_orientation": "horizontal",
             "window_count": 2,
             "single_view_side": "L",
+            "checked_paths": [],
         }
         if not os.path.isfile(self.config_path):
             return defaults
@@ -60,6 +61,11 @@ class ConfigManager:
             data["show_file_list"] = bool(data.get("show_file_list", True))
             data["window_count"] = 1 if int(data.get("window_count", 2) or 2) == 1 else 2
             data["single_view_side"] = "R" if str(data.get("single_view_side", "L") or "L").upper() == "R" else "L"
+            # 旧配置默认没有勾选记录；损坏字段只清空自身，不影响其他配置。
+            checked_paths = data.get("checked_paths", [])
+            data["checked_paths"] = sorted({
+                p for p in checked_paths if isinstance(p, str) and p.strip()
+            }) if isinstance(checked_paths, list) else []
             return data
         except Exception:
             return defaults
@@ -67,6 +73,11 @@ class ConfigManager:
     def save(self, data):
         """保存配置字典至 json 文件。"""
         try:
+            # 仅保存有效路径字符串，去重排序使配置内容保持稳定。
+            checked_paths = data.get("checked_paths", [])
+            checked_paths = sorted({
+                p for p in checked_paths if isinstance(p, str) and p.strip()
+            }) if isinstance(checked_paths, list) else []
             payload = {
                 "left_dir": str(data.get("left_dir", "") or "").strip(),
                 "right_dir": str(data.get("right_dir", "") or "").strip(),
@@ -81,6 +92,7 @@ class ConfigManager:
                 "layout_orientation": "vertical" if data.get("layout_orientation") == "vertical" else "horizontal",
                 "window_count": 1 if int(data.get("window_count", 2) or 2) == 1 else 2,
                 "single_view_side": "R" if str(data.get("single_view_side", "L") or "L").upper() == "R" else "L",
+                "checked_paths": checked_paths,
             }
             tmp_path = self.config_path + ".tmp"
             with open(tmp_path, "w", encoding="utf-8") as f:

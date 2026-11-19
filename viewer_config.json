@@ -11,5 +11,8 @@
   "show_file_list": true,
   "layout_orientation": "vertical",
   "window_count": 1,
-  "single_view_side": "L"
+  "single_view_side": "L",
+  "checked_paths": [
+    "D:\\03DataSet\\003-PIC-Cutting\\04Val\\1917\\0818-OK-zheng\\NG_Front1Camera_0_20260818_094841_235-LF.png"
+  ]
 }
